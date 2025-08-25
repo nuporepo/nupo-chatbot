@@ -12,6 +12,8 @@ primary_region = 'fra'
   DATABASE_URL = "file:/data/nupo.sqlite"
   NODE_ENV = "production"
   SHOPIFY_APP_URL = "https://nupo-chatbot.fly.dev"
+  HOST = "0.0.0.0"
+  PORT = "3000"
 
 # Mount the volume for persistent SQLite database
 [mounts]
