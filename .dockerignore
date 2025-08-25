@@ -1,3 +1,12 @@
 .cache
 build
 node_modules
+.env
+.env.*
+dev.sqlite
+dev.sqlite-journal
+.git
+.gitignore
+README.md
+.DS_Store
+.shopify
