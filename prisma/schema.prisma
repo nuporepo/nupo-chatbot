@@ -1,0 +1,194 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Note that some adapters may set a maximum length for the String type by default, please ensure your strings are long
+// enough when changing adapters.
+// See https://www.prisma.io/docs/orm/reference/prisma-schema-reference#string for more information
+datasource db {
+  provider = "sqlite"
+  url      = "file:dev.sqlite"
+}
+
+model Session {
+  id            String    @id
+  shop          String
+  state         String
+  isOnline      Boolean   @default(false)
+  scope         String?
+  expires       DateTime?
+  accessToken   String
+  userId        BigInt?
+  firstName     String?
+  lastName      String?
+  email         String?
+  accountOwner  Boolean   @default(false)
+  locale        String?
+  collaborator  Boolean?  @default(false)
+  emailVerified Boolean?  @default(false)
+}
+
+// Chatbot-specific models
+model Shop {
+  id          String   @id @default(cuid())
+  shopDomain  String   @unique
+  language    String   @default("en")
+  currency    String   @default("USD")
+  timezone    String   @default("UTC")
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  knowledgeBase KnowledgeBase[]
+  chatSessions  ChatSession[]
+  botConfig     BotConfig?
+  conversationAnalytics ConversationAnalytics[]
+  popularQuestions PopularQuestions[]
+  productAnalytics ProductAnalytics[]
+
+  @@map("shops")
+}
+
+model BotConfig {
+  id          String  @id @default(cuid())
+  shopId      String  @unique
+  botName     String  @default("Shop Assistant")
+  welcomeMessage String @default("Hello! I'm here to help you find the perfect products. What are you looking for today?")
+  systemPrompt String @default("You are a helpful shopping assistant for this store. Help customers find products, explain features, and guide them through their purchase.")
+  errorMessage String @default("I apologize, but I'm having trouble right now. Please try again in a moment.")
+  typingMessage String @default("Typing...")
+  placeholderText String @default("Ask me anything about products...")
+  buttonText String @default("Send")
+  chatTitle String @default("Shop Assistant")
+  temperature Float   @default(0.7)
+  maxTokens   Int     @default(500)
+  isActive    Boolean @default(true)
+  openaiApiKey String?
+  position    String  @default("popup") // "popup" or "embedded"
+  
+  // Learning Options
+  enableCustomerMemory Boolean @default(false)
+  enableConversationAnalytics Boolean @default(true)
+  enableAutoKnowledgeGeneration Boolean @default(false)
+  enablePerformanceOptimization Boolean @default(false)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@map("bot_configs")
+}
+
+model KnowledgeBase {
+  id          String   @id @default(cuid())
+  shopId      String
+  title       String
+  content     String
+  category    String   @default("general")
+  tags        String   @default("")
+  isActive    Boolean  @default(true)
+  priority    Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@map("knowledge_base")
+}
+
+model ChatSession {
+  id          String   @id @default(cuid())
+  shopId      String
+  sessionId   String   @unique
+  customerInfo String?
+  currentCart String   @default("{}")
+  language    String   @default("en")
+  isActive    Boolean  @default(true)
+  customerFingerprint String? // Browser fingerprint for recognition
+  customerEmail String?  // Email from order history lookup
+  isReturning   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  expiresAt   DateTime
+
+  shop     Shop          @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  messages ChatMessage[]
+  analytics ConversationAnalytics?
+
+  @@map("chat_sessions")
+}
+
+model ChatMessage {
+  id            String   @id @default(cuid())
+  sessionId     String
+  role          String   // 'user' or 'assistant'
+  content       String
+  metadata      String?  // JSON string for storing product info, cart updates, etc.
+  timestamp     DateTime @default(now())
+
+  session ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@map("chat_messages")
+}
+
+model ConversationAnalytics {
+  id                String   @id @default(cuid())
+  sessionId         String   @unique
+  shopId            String
+  outcome           String   // 'purchase', 'abandoned', 'info_only', 'pending'
+  duration          Int      // minutes
+  messageCount      Int
+  productsViewed    String?  // JSON array of product IDs
+  productsRecommended String? // JSON array of product IDs
+  topicsDiscussed   String?  // JSON array of topics
+  customerSatisfaction String? // 'positive', 'neutral', 'negative'
+  conversionValue   Float?   // order value if purchase made
+  createdAt         DateTime @default(now())
+
+  shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  session ChatSession @relation(fields: [sessionId], references: [sessionId], onDelete: Cascade)
+
+  @@map("conversation_analytics")
+}
+
+model PopularQuestions {
+  id              String   @id @default(cuid())
+  shopId          String
+  question        String
+  frequency       Int      @default(1)
+  successRate     Float    @default(0.0)
+  avgResponseTime Float    @default(0.0)
+  lastAsked       DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@unique([shopId, question])
+  @@map("popular_questions")
+}
+
+model ProductAnalytics {
+  id                String   @id @default(cuid())
+  shopId            String
+  productId         String
+  productTitle      String
+  timesRecommended  Int      @default(0)
+  timesViewed       Int      @default(0)
+  timesPurchased    Int      @default(0)
+  conversionRate    Float    @default(0.0)
+  avgOrderValue     Float    @default(0.0)
+  lastRecommended   DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@unique([shopId, productId])
+  @@map("product_analytics")
+}
