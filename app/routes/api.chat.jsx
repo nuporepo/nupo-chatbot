@@ -328,22 +328,35 @@ Current conversation context: Customer is asking about products or shopping assi
       }
 
       // Generate a follow-up response with the function results
-      const followUpCompletion = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [
-          ...conversationHistory,
-          assistantMessage,
-          {
-            role: 'tool',
-            tool_call_id: toolCall.id,
-            content: JSON.stringify(functionResults),
-          },
-        ],
-        temperature: shop.botConfig.temperature,
-        max_tokens: shop.botConfig.maxTokens,
-      });
+      console.log("🔄 Making follow-up OpenAI call with function results...");
+      console.log("📊 Function results:", JSON.stringify(functionResults, null, 2));
+      
+      try {
+        const followUpCompletion = await openai.chat.completions.create({
+          model: "gpt-4o-mini",
+          messages: [
+            ...conversationHistory,
+            assistantMessage,
+            {
+              role: 'tool',
+              tool_call_id: toolCall.id,
+              content: JSON.stringify(functionResults),
+            },
+          ],
+          temperature: shop.botConfig.temperature,
+          max_tokens: shop.botConfig.maxTokens,
+        });
 
-      assistantMessage = followUpCompletion.choices[0].message;
+        assistantMessage = followUpCompletion.choices[0].message;
+        console.log("✅ Follow-up AI Response:", assistantMessage.content);
+      } catch (error) {
+        console.error("❌ Follow-up OpenAI call failed:", error);
+        // Fallback response
+        assistantMessage = {
+          role: 'assistant',
+          content: 'I found some great options for you!'
+        };
+      }
     }
 
     // Save assistant message
