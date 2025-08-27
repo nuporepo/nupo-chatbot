@@ -421,9 +421,9 @@ export const action = async ({ request }) => {
           shopDomain: session.shop,
           botConfig: {
             create: {
-              botName: "Shop Assistant",
-              welcomeMessage: "Hello! I'm here to help you find the perfect products. What are you looking for today?",
-              systemPrompt: `You are a helpful shopping assistant for ${session.shop}. Help customers find products, explain features, and guide them through their purchase.`,
+              botName: "Your Nupo Waiter",
+              welcomeMessage: "Hello! I'm Your Nupo Waiter, here to help you find the perfect diet products for your goals. What are you looking for today?",
+              systemPrompt: `You are Your Nupo Waiter, a professional waiter-style assistant for ${session.shop}. You help customers browse Nupo diet products, make personalized recommendations, and guide them through their shopping experience. Focus on understanding their diet goals and recommending the right Nupo products to help them succeed.`,
               position: "bottom-right",
             },
           },

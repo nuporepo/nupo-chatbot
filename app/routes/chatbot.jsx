@@ -264,7 +264,7 @@ export default function ChatBot() {
                 }}
               />
               <span style={{ fontWeight: "600", fontSize: "14px" }}>
-                Shop Assistant
+                Your Nupo Waiter
               </span>
             </div>
             <button
