@@ -213,8 +213,18 @@ async function getStoreContext(admin, shop) {
 
 async function searchProducts(admin, { query, collection, limit = 5 }) {
   try {
-    // If no specific query, get all products
-    let searchQuery = query && query.trim() ? `title:*${query}* OR body:*${query}* OR tag:*${query}*` : '';
+    // Enhanced search: split query into words and search more flexibly
+    let searchQuery = '';
+    if (query && query.trim()) {
+      const words = query.trim().toLowerCase().split(/\s+/);
+      // Create flexible search patterns for each word
+      const searchPatterns = words.map(word => 
+        `title:*${word}* OR body:*${word}* OR tag:*${word}* OR vendor:*${word}*`
+      );
+      searchQuery = searchPatterns.join(' OR ');
+    }
+    
+    console.log(`🔍 Enhanced search query: "${query}" -> GraphQL: "${searchQuery}"`);
     
     const response = await admin.graphql(`
       query searchProducts($query: String, $first: Int!) {
@@ -511,13 +521,13 @@ ${customerMemoryContext}
 
 IMPORTANT RESPONSE GUIDELINES:
 - You are a helpful shopping assistant - keep communication simple and minimal
-- NEVER include URLs, technical details, or product codes in your responses
-- When showing products, use MAXIMUM 1-2 sentences like "Here are some great options!" or "Found these for you!"
-- Product cards show all the details automatically - DON'T repeat prices, descriptions, or features in text
-- Keep responses under 20 words when possible
-- Always end with a simple question like "Which one interests you?" or "Need help choosing?"
-- If results don't match what they asked for, just say "Let me search differently" and try again
-- Act like a concise, helpful waiter - let the visual product cards do the talking
+- NEVER include URLs, technical details, or product codes in your responses  
+- When showing products: RESPOND WITH ONLY AN EMOJI (🛍️) OR EMPTY MESSAGE - NO TEXT AT ALL
+- Product cards show all the details automatically - NEVER repeat prices, descriptions, or features in text
+- For non-product questions, keep responses under 15 words
+- Only use text responses for questions about store policies, shipping, or general help
+- If results don't match what they asked for, try a different search term automatically
+- Act like a concise, helpful waiter - let the visual product cards do ALL the talking
 
 Current conversation context: Customer is asking about products or shopping assistance.`,
       },
@@ -544,6 +554,16 @@ Current conversation context: Customer is asking about products or shopping assi
 
     console.log("🤖 Calling OpenAI...");
     
+    // LOG THE COMPLETE PROMPT FOR DEBUGGING
+    console.log("📋 COMPLETE PROMPT TO OPENAI:");
+    console.log("=====================================");
+    conversationHistory.forEach((msg, index) => {
+      console.log(`[${index}] ROLE: ${msg.role}`);
+      console.log(`[${index}] CONTENT: ${msg.content}`);
+      console.log("-------------------------------------");
+    });
+    console.log("=====================================");
+    
     // Call OpenAI
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
@@ -554,8 +574,8 @@ Current conversation context: Customer is asking about products or shopping assi
         {
           type: "function",
           function: {
-            name: "search_products",
-            description: "Search for products in the store. Only in-stock products will be returned. After searching, give a very brief response (under 20 words) like 'Here are some great options!' then let the product cards show all the details. Keep it simple and conversational.",
+            name: "search_products", 
+            description: "Search for products in the store. Only in-stock products will be returned. IMPORTANT: When you use this function, respond with ONLY an empty message or a single emoji (like 🛍️). DO NOT include any text descriptions, prices, or product details - the product cards will show everything automatically. Let the visual cards do ALL the talking.",
             parameters: {
               type: "object",
               properties: {
