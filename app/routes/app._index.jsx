@@ -15,6 +15,7 @@ import {
   InlineStack,
   Badge,
   List,
+  ProgressBar,
 } from "@shopify/polaris";
 import { TitleBar, useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
@@ -342,6 +343,12 @@ export default function Index() {
                 onClick={() => setActiveTab("analytics")}
               >
                 Analytics Chat
+              </Button>
+              <Button 
+                pressed={activeTab === "scraping"}
+                onClick={() => setActiveTab("scraping")}
+              >
+                Content Scraping
               </Button>
               <Button 
                 pressed={activeTab === "embed"}
@@ -678,6 +685,11 @@ export default function Index() {
             </Card>
           )}
 
+          {/* Content Scraping Tab */}
+          {activeTab === "scraping" && (
+            <ScrapingTab shop={shop} />
+          )}
+
           {/* Embed Code Tab */}
           {activeTab === "embed" && (
             <Card>
@@ -930,5 +942,184 @@ function AnalyticsChat() {
         </button>
       </div>
     </div>
+  );
+}
+
+// Scraping Tab Component
+function ScrapingTab({ shop }) {
+  const fetcher = useFetcher();
+  const [scrapingStatus, setScrapingStatus] = useState(null);
+  const [isPolling, setIsPolling] = useState(false);
+
+  // Poll for scraping status
+  useEffect(() => {
+    if (isPolling) {
+      const interval = setInterval(() => {
+        fetcher.submit(
+          { action: "get_status" },
+          { method: "post", action: "/api/scrape" }
+        );
+      }, 2000);
+
+      return () => clearInterval(interval);
+    }
+  }, [isPolling, fetcher]);
+
+  // Handle fetcher results
+  useEffect(() => {
+    if (fetcher.data) {
+      if (fetcher.data.latestJob) {
+        setScrapingStatus(fetcher.data);
+        
+        // Stop polling if job is complete
+        if (fetcher.data.latestJob.status !== 'running') {
+          setIsPolling(false);
+        }
+      }
+    }
+  }, [fetcher.data]);
+
+  const startScraping = () => {
+    setIsPolling(true);
+    fetcher.submit(
+      { action: "start_scrape" },
+      { method: "post", action: "/api/scrape" }
+    );
+  };
+
+  const getStatus = () => {
+    fetcher.submit(
+      { action: "get_status" },
+      { method: "post", action: "/api/scrape" }
+    );
+  };
+
+  const isLoading = fetcher.state === "submitting";
+  const latestJob = scrapingStatus?.latestJob;
+  const contentStats = scrapingStatus?.contentStats || {};
+
+  return (
+    <Card>
+      <BlockStack gap="500">
+        <Text as="h2" variant="headingMd">Content Scraping</Text>
+        
+        <Text variant="bodyMd" color="subdued">
+          Scrape your entire shop to make the AI aware of all products, blog articles, and collections. 
+          This helps the AI provide more accurate and comprehensive answers to customers.
+        </Text>
+
+        {/* Current Status */}
+        <Card background="bg-surface-secondary">
+          <BlockStack gap="300">
+            <Text as="h3" variant="headingSm">Current Status</Text>
+            
+            {latestJob ? (
+              <BlockStack gap="200">
+                <InlineStack gap="200" align="space-between">
+                  <Text variant="bodyMd">Last Job:</Text>
+                  <Badge tone={
+                    latestJob.status === 'completed' ? 'success' :
+                    latestJob.status === 'running' ? 'info' :
+                    latestJob.status === 'failed' ? 'critical' : 'attention'
+                  }>
+                    {latestJob.status.toUpperCase()}
+                  </Badge>
+                </InlineStack>
+                
+                {latestJob.status === 'running' && (
+                  <ProgressBar progress={latestJob.progress || 0} size="small" />
+                )}
+                
+                {latestJob.status === 'completed' && (
+                  <InlineStack gap="200" align="space-between">
+                    <Text variant="bodyMd">Items Processed:</Text>
+                    <Text variant="bodyMd" fontWeight="semibold">{latestJob.itemsProcessed || 0}</Text>
+                  </InlineStack>
+                )}
+                
+                {latestJob.errorMessage && (
+                  <Text variant="bodyMd" tone="critical">{latestJob.errorMessage}</Text>
+                )}
+                
+                <Text variant="bodySm" color="subdued">
+                  {latestJob.completedAt ? 
+                    `Completed: ${new Date(latestJob.completedAt).toLocaleString()}` :
+                    latestJob.startedAt ? 
+                    `Started: ${new Date(latestJob.startedAt).toLocaleString()}` :
+                    `Created: ${new Date(latestJob.createdAt).toLocaleString()}`
+                  }
+                </Text>
+              </BlockStack>
+            ) : (
+              <Text variant="bodyMd" color="subdued">No scraping jobs yet</Text>
+            )}
+          </BlockStack>
+        </Card>
+
+        {/* Content Statistics */}
+        {Object.keys(contentStats).length > 0 && (
+          <Card background="bg-surface-secondary">
+            <BlockStack gap="300">
+              <Text as="h3" variant="headingSm">Scraped Content</Text>
+              
+              <InlineStack gap="400" wrap>
+                {contentStats.product && (
+                  <div>
+                    <Text variant="headingMd" color="success">{contentStats.product}</Text>
+                    <Text variant="bodySm" color="subdued">Products</Text>
+                  </div>
+                )}
+                
+                {contentStats.article && (
+                  <div>
+                    <Text variant="headingMd" color="info">{contentStats.article}</Text>
+                    <Text variant="bodySm" color="subdued">Articles</Text>
+                  </div>
+                )}
+                
+                {contentStats.collection && (
+                  <div>
+                    <Text variant="headingMd" color="warning">{contentStats.collection}</Text>
+                    <Text variant="bodySm" color="subdued">Collections</Text>
+                  </div>
+                )}
+              </InlineStack>
+            </BlockStack>
+          </Card>
+        )}
+
+        {/* Actions */}
+        <InlineStack gap="300">
+          <Button
+            variant="primary"
+            loading={isLoading && fetcher.formData?.get("action") === "start_scrape"}
+            disabled={latestJob?.status === 'running'}
+            onClick={startScraping}
+          >
+            {latestJob?.status === 'running' ? 'Scraping...' : 'Start Full Scrape'}
+          </Button>
+          
+          <Button
+            loading={isLoading && fetcher.formData?.get("action") === "get_status"}
+            onClick={getStatus}
+          >
+            Refresh Status
+          </Button>
+        </InlineStack>
+
+        {/* Help Text */}
+        <Text variant="bodySm" color="subdued">
+          <strong>What gets scraped:</strong><br/>
+          • All products (titles, descriptions, tags, variants)<br/>
+          • Blog articles (content, tags, author info)<br/>
+          • Collections (titles, descriptions)<br/>
+          • SEO content and keywords for better search<br/><br/>
+          
+          <strong>How it helps:</strong><br/>
+          The AI can now answer questions about your products, reference your blog articles, 
+          and provide comprehensive information based on all your shop content.
+        </Text>
+      </BlockStack>
+    </Card>
   );
 }

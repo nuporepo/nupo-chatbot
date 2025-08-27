@@ -49,6 +49,10 @@ model Shop {
   conversationAnalytics ConversationAnalytics[]
   popularQuestions PopularQuestions[]
   productAnalytics ProductAnalytics[]
+  
+  // Content scraping
+  shopContent ShopContent[]
+  scrapingJobs ScrapingJob[]
 
   @@map("shops")
 }
@@ -191,4 +195,52 @@ model ProductAnalytics {
 
   @@unique([shopId, productId])
   @@map("product_analytics")
+}
+
+model ShopContent {
+  id            String   @id @default(cuid())
+  shopId        String
+  contentType   String   // "product", "article", "collection", "page"
+  externalId    String   // Shopify ID or URL slug
+  title         String
+  content       String   // Long text content
+  excerpt       String?  // Short summary
+  url           String?  // Full URL
+  tags          String?  // Comma-separated tags
+  author        String?  // For articles
+  publishedAt   DateTime?
+  lastScraped   DateTime @default(now())
+  isActive      Boolean  @default(true)
+  
+  // SEO and searchability
+  searchableContent String // Processed content for search
+  keywords         String? // Comma-separated keywords
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  
+  @@unique([shopId, contentType, externalId])
+  @@index([shopId, contentType])
+  @@index([shopId, keywords])
+  @@map("shop_content")
+}
+
+model ScrapingJob {
+  id          String   @id @default(cuid())
+  shopId      String
+  jobType     String   // "full_scrape", "incremental", "articles_only"
+  status      String   // "pending", "running", "completed", "failed"
+  progress    Int      @default(0) // 0-100
+  itemsFound  Int      @default(0)
+  itemsProcessed Int   @default(0)
+  errorMessage String?
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime @default(now())
+  
+  shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  
+  @@map("scraping_jobs")
 }
