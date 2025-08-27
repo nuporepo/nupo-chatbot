@@ -53,42 +53,10 @@ async function scrapeProducts(admin, shopId) {
               title
               handle
               description
-              descriptionHtml
               tags
               vendor
               productType
-              createdAt
-              updatedAt
               status
-              images(first: 5) {
-                edges {
-                  node {
-                    url
-                    altText
-                  }
-                }
-              }
-              variants(first: 10) {
-                edges {
-                  node {
-                    id
-                    title
-                    price
-                    compareAtPrice
-                    availableForSale
-                    sku
-                  }
-                }
-              }
-              collections(first: 5) {
-                edges {
-                  node {
-                    id
-                    title
-                    handle
-                  }
-                }
-              }
             }
           }
           pageInfo {
@@ -127,9 +95,7 @@ async function scrapeProducts(admin, shopId) {
           product.description,
           product.vendor,
           product.productType,
-          product.tags?.join(' '),
-          product.variants?.edges?.map(v => v.node.title).join(' '),
-          product.collections?.edges?.map(c => c.node.title).join(' ')
+          product.tags?.join(' ')
         ].filter(Boolean).join(' '));
         
         const keywords = extractKeywords(
@@ -146,7 +112,7 @@ async function scrapeProducts(admin, shopId) {
           excerpt: product.description?.substring(0, 200) + '...' || '',
           url: `/products/${product.handle}`,
           tags: product.tags?.join(', ') || '',
-          publishedAt: new Date(product.createdAt),
+          publishedAt: new Date(),
           searchableContent,
           keywords,
           lastScraped: new Date(),
@@ -214,10 +180,8 @@ async function scrapeBlogArticles(admin, shopId) {
                     body
                     summary
                     tags
-                    createdAt
-                    updatedAt
                     publishedAt
-                    status
+                    isPublished
                   }
                 }
                 pageInfo {
@@ -261,11 +225,11 @@ async function scrapeBlogArticles(admin, shopId) {
               url: `/blogs/${blog.handle}/${article.handle}`,
               tags: article.tags?.join(', ') || '',
               author: '',
-              publishedAt: article.publishedAt ? new Date(article.publishedAt) : new Date(article.createdAt),
+              publishedAt: article.publishedAt ? new Date(article.publishedAt) : new Date(),
               searchableContent,
               keywords,
               lastScraped: new Date(),
-              isActive: article.status === 'published'
+              isActive: article.isPublished
             });
           }
           
