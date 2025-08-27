@@ -107,7 +107,7 @@ async function searchProducts(shopDomain, { query, collection, limit = 5 }) {
     // Get the most recent session for this shop
     const session = await prisma.session.findFirst({
       where: { shop: shopDomain },
-      orderBy: { updatedAt: 'desc' }
+      orderBy: { id: 'desc' }
     });
 
     if (!session || !session.accessToken) {
