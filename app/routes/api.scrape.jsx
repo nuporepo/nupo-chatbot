@@ -267,7 +267,6 @@ async function scrapeCollections(admin, shopId) {
               description
               descriptionHtml
               updatedAt
-              productsCount
             }
           }
           pageInfo {
