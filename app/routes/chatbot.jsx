@@ -2,6 +2,7 @@ import { json } from "@remix-run/node";
 import { useLoaderData } from "@remix-run/react";
 import { useState, useEffect, useRef } from "react";
 import { v4 as uuidv4 } from "uuid";
+import prisma from "../db.server";
 
 export const loader = async ({ request }) => {
   const url = new URL(request.url);
@@ -14,17 +15,39 @@ export const loader = async ({ request }) => {
     throw new Response("Shop domain is required", { status: 400 });
   }
 
+  // Load shop configuration to get dynamic bot name and settings
+  let shop = await prisma.shop.findUnique({
+    where: { shopDomain },
+    include: { botConfig: true },
+  });
+
+  if (!shop) {
+    // Create shop with minimal default config if it doesn't exist
+    shop = await prisma.shop.create({
+      data: {
+        shopDomain,
+        botConfig: {
+          create: {
+            // Only essential defaults, everything else comes from schema defaults
+          },
+        },
+      },
+      include: { botConfig: true },
+    });
+  }
+
   return json({
     shopDomain,
     theme,
     position,
     language,
     sessionId: uuidv4(),
+    botConfig: shop.botConfig,
   });
 };
 
 export default function ChatBot() {
-  const { shopDomain, theme, position, language, sessionId } = useLoaderData();
+  const { shopDomain, theme, position, language, sessionId, botConfig } = useLoaderData();
   const [isOpen, setIsOpen] = useState(position === "hero" ? true : false);
   const [messages, setMessages] = useState([]);
   const [inputValue, setInputValue] = useState("");
@@ -55,7 +78,7 @@ export default function ChatBot() {
       {
         id: "welcome",
         role: "assistant",
-        content: "Hello! I'm your personal shopping assistant. I'm here to help you find the perfect products, just like a waiter in a restaurant. What can I help you with today?",
+        content: botConfig?.welcomeMessage || "Hello! I'm here to help you find the perfect products. What are you looking for today?",
         timestamp: new Date(),
       },
     ]);
@@ -264,7 +287,7 @@ export default function ChatBot() {
                 }}
               />
               <span style={{ fontWeight: "600", fontSize: "14px" }}>
-                Your Nupo Waiter
+                {botConfig?.botName || "Shop Assistant"}
               </span>
             </div>
             <button
@@ -484,7 +507,7 @@ export default function ChatBot() {
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               onKeyPress={handleKeyPress}
-              placeholder="Ask me anything about our products..."
+              placeholder={botConfig?.placeholderText || "Ask me anything about our products..."}
               style={{
                 flex: 1,
                 border: `1px solid ${currentTheme.border}`,
