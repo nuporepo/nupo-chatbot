@@ -102,7 +102,7 @@ export const loader = async ({ request }) => {
   height="600" 
   frameborder="0"
   style="border-radius: 8px; max-width: 800px; margin: 0 auto; display: block;"
-  title="Nupo Chatbot">
+  title="${shop.botConfig?.chatTitle || 'Shop Assistant'}">
 </iframe>`
       : `<!-- Popup Chatbot (Floating Widget) -->
 <iframe 
@@ -111,7 +111,7 @@ export const loader = async ({ request }) => {
   height="600" 
   frameborder="0"
   style="position: fixed; ${getPopupPositionStyle(shop.botConfig?.position || 'bottom-right')} width: 350px; height: 500px; border-radius: 12px; z-index: 9999;"
-  title="Nupo Chatbot">
+  title="${shop.botConfig?.chatTitle || 'Shop Assistant'}">
 </iframe>`,
   };
 };
@@ -305,7 +305,7 @@ export default function Index() {
 
   return (
     <Page>
-      <TitleBar title="Nupo Chatbot - Waiter Assistant">
+      <TitleBar title="Shop Chatbot - Waiter Assistant">
         <Button
           variant={shop.botConfig?.isActive ? "primary" : "secondary"}
           tone={shop.botConfig?.isActive ? "success" : "critical"}

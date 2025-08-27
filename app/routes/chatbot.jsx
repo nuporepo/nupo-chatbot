@@ -287,7 +287,7 @@ export default function ChatBot() {
                 }}
               />
               <span style={{ fontWeight: "600", fontSize: "14px" }}>
-                {botConfig?.botName || "Shop Assistant"}
+                {botConfig?.chatTitle || "Shop Assistant"}
               </span>
             </div>
             <button
