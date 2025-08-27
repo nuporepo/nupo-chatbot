@@ -36,6 +36,7 @@ function extractKeywords(text, title = "") {
 // Scrape all products from Shopify
 async function scrapeProducts(admin, shopId) {
   console.log("🔍 Scraping all products...");
+  console.log("🔍 Admin object:", typeof admin, Object.keys(admin || {}));
   
   const products = [];
   let hasNextPage = true;
@@ -485,9 +486,26 @@ async function performFullScrape(admin, shopId, shopDomain) {
 }
 
 export const action = async ({ request }) => {
+  console.log("🔐 Scraping API: Starting authentication...");
+  
   const { admin, session } = await authenticate.admin(request);
+  
+  console.log("🔐 Session details:", {
+    shop: session?.shop,
+    accessToken: session?.accessToken ? "present" : "missing",
+    isOnline: session?.isOnline,
+    scope: session?.scope
+  });
+  
+  if (!session?.shop) {
+    console.error("❌ No shop in session!");
+    return json({ error: "No valid shop session found" }, { status: 401 });
+  }
+  
   const formData = await request.formData();
   const action = formData.get("action");
+  
+  console.log(`🎯 Action: ${action} for shop: ${session.shop}`);
   
   // Get shop
   let shop = await prisma.shop.findUnique({
