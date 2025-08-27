@@ -211,11 +211,9 @@ async function scrapeBlogArticles(admin, shopId) {
                     id
                     title
                     handle
-                    content
                     contentHtml
                     excerpt
                     tags
-                    author
                     createdAt
                     updatedAt
                     publishedAt
@@ -243,13 +241,13 @@ async function scrapeBlogArticles(admin, shopId) {
             
             const searchableContent = processContentForSearch([
               article.title,
-              article.content,
+              article.contentHtml,
               article.excerpt,
               article.tags?.join(' ')
             ].filter(Boolean).join(' '));
             
             const keywords = extractKeywords(
-              `${article.content} ${article.tags?.join(' ')}`,
+              `${article.contentHtml} ${article.tags?.join(' ')}`,
               article.title
             );
             
@@ -258,11 +256,11 @@ async function scrapeBlogArticles(admin, shopId) {
               contentType: 'article',
               externalId: article.id,
               title: article.title,
-              content: article.content || '',
-              excerpt: article.excerpt || article.content?.substring(0, 300) + '...' || '',
+              content: article.contentHtml || '',
+              excerpt: article.excerpt || article.contentHtml?.substring(0, 300) + '...' || '',
               url: `/blogs/${blog.handle}/${article.handle}`,
               tags: article.tags?.join(', ') || '',
-              author: article.author || '',
+              author: '',
               publishedAt: article.publishedAt ? new Date(article.publishedAt) : new Date(article.createdAt),
               searchableContent,
               keywords,
@@ -401,15 +399,24 @@ async function performFullScrape(admin, shopId, shopDomain) {
     allContent = allContent.concat(products);
     totalItems += products.length;
     
-    // Scrape articles
+    // Scrape articles (skip if no read_content scope)
     await prisma.scrapingJob.update({
       where: { id: job.id },
       data: { progress: 50 }
     });
     
-    const articles = await scrapeBlogArticles(admin, shopId);
-    allContent = allContent.concat(articles);
-    totalItems += articles.length;
+    try {
+      const articles = await scrapeBlogArticles(admin, shopId);
+      allContent = allContent.concat(articles);
+      totalItems += articles.length;
+      console.log(`📰 Found ${articles.length} blog articles`);
+    } catch (error) {
+      if (error.message.includes("Access denied for blogs field")) {
+        console.log("⚠️ Skipping blog articles - missing read_content scope");
+      } else {
+        throw error; // Re-throw if it's a different error
+      }
+    }
     
     // Scrape collections
     await prisma.scrapingJob.update({
