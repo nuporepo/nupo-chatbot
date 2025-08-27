@@ -1,5 +1,4 @@
 import { json } from "@remix-run/node";
-import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 
 // Import the scraping functions from api.scrape
