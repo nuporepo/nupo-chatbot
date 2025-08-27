@@ -6,6 +6,7 @@ import { authenticate } from "../shopify.server";
 import { v4 as uuidv4 } from "uuid";
 import prisma from "../db.server";
 import OpenAI from "openai";
+// import { shouldAutoScrape, triggerAutoScrape } from "../utils/auto-scraper";
 
 export const loader = async ({ request }) => {
   const { session } = await authenticate.admin(request);
@@ -204,7 +205,7 @@ async function getStoreContext(admin, shop) {
   } catch (error) {
     console.error("Error fetching store context:", error);
     return { 
-      shop: { name: "Unknown Store", currencyCode: "USD" }, 
+      shop: { name: "Unknown Store", currencyCode: "EUR" }, 
       collections: [], 
       productCount: "0" 
     };
@@ -481,6 +482,15 @@ export const action = async ({ request }) => {
 
     // Get store context
     const storeData = await getStoreContext(admin, shop);
+    
+    // TODO: Re-enable auto-scraping after fixing build issues
+    // const needsAutoScrape = await shouldAutoScrape(shop.id);
+    // if (needsAutoScrape) {
+    //   console.log(`🤖 AUTO-SCRAPE: Triggering background scraping for ${session.shop}`);
+    //   triggerAutoScrape(admin, shop.id, session.shop).catch(error => {
+    //     console.error("Auto-scrape trigger failed:", error);
+    //   });
+    // }
     
     // Prepare conversation history with customer memory if available
     let customerMemoryContext = '';

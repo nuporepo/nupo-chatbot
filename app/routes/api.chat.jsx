@@ -1,7 +1,7 @@
 import { json } from "@remix-run/node";
 import prisma from "../db.server";
 import OpenAI from "openai";
-import { shouldAutoScrape, triggerAutoScrape } from "../utils/auto-scraper";
+// import { shouldAutoScrape, triggerAutoScrape } from "../utils/auto-scraper";
 
 // Helper functions for Shopify API integration
 async function getStoreContext(shopDomain) {
