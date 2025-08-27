@@ -150,11 +150,31 @@ async function searchProducts(shopDomain, { query, collection, limit = 5 }) {
       }
     `;
     
-    // Build Shopify search query
+    // Build Shopify search query with intelligent term mapping
     let shopifyQuery = '';
     if (query && query.trim()) {
-      const words = query.toLowerCase().trim().split(/\s+/);
-      shopifyQuery = words.join(' OR ');
+      let searchTerms = query.toLowerCase().trim();
+      
+      // Map customer language to product terms
+      const termMappings = {
+        'diet': 'diet OR TDR OR "Total Diet Replacement" OR "meal replacement"',
+        'shake': 'shake OR smoothie OR drink OR liquid',
+        'bar': 'bar OR snack',
+        'chocolate': 'chocolate OR cocoa OR choco',
+        'vanilla': 'vanilla',
+        'strawberry': 'strawberry OR berry',
+        'protein': 'protein OR whey'
+      };
+      
+      // Apply mappings
+      Object.keys(termMappings).forEach(term => {
+        if (searchTerms.includes(term)) {
+          searchTerms = searchTerms.replace(new RegExp(term, 'gi'), termMappings[term]);
+        }
+      });
+      
+      shopifyQuery = searchTerms;
+      console.log(`🧠 Mapped search: "${query}" -> "${shopifyQuery}"`);
     }
     
     const response = await fetch(`https://${shopDomain}/admin/api/2023-10/graphql.json`, {
@@ -176,7 +196,25 @@ async function searchProducts(shopDomain, { query, collection, limit = 5 }) {
     
     if (result.errors) {
       console.error('GraphQL errors:', result.errors);
-      return { products: [], query, total: 0 };
+      
+      // Check if it's an authentication error
+      const authError = result.errors.some(error => 
+        error.message.includes('Invalid API key') || 
+        error.message.includes('access token') ||
+        error.message.includes('unrecognized login')
+      );
+      
+      if (authError) {
+        console.error('❌ Authentication failed - session may need to be refreshed');
+        return { 
+          products: [], 
+          query, 
+          total: 0, 
+          error: 'Authentication failed - please reinstall the app or refresh permissions' 
+        };
+      }
+      
+      return { products: [], query, total: 0, error: 'Search failed' };
     }
     
     // Format results for frontend
