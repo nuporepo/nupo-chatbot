@@ -109,7 +109,22 @@ async function searchProducts(shopDomain, { query, collection, limit = 5 }) {
     let searchResults = shop.shopContent.filter(content => content.contentType === 'product' && content.isActive);
     
     if (query && query.trim()) {
-      searchResults = intelligentProductSearch(shop.shopContent.filter(content => content.contentType === 'product' && content.isActive), query);
+      const searchTerm = query.toLowerCase().trim();
+      
+      // Simple but effective search
+      searchResults = searchResults.filter(product => {
+        const title = product.title.toLowerCase();
+        const content = product.content?.toLowerCase() || '';
+        const searchable = product.searchableContent?.toLowerCase() || '';
+        
+        // Split query into words and check if any word matches
+        const queryWords = searchTerm.split(/\s+/);
+        return queryWords.some(word => 
+          title.includes(word) || content.includes(word) || searchable.includes(word)
+        );
+      });
+      
+      console.log(`🔍 Search term: "${searchTerm}" found ${searchResults.length} products`);
     }
     
     // Limit results
