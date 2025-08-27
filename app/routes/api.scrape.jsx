@@ -211,7 +211,7 @@ async function scrapeBlogArticles(admin, shopId) {
                     id
                     title
                     handle
-                    contentHtml
+                    body
                     excerpt
                     tags
                     createdAt
@@ -241,13 +241,13 @@ async function scrapeBlogArticles(admin, shopId) {
             
             const searchableContent = processContentForSearch([
               article.title,
-              article.contentHtml,
+              article.body,
               article.excerpt,
               article.tags?.join(' ')
             ].filter(Boolean).join(' '));
             
             const keywords = extractKeywords(
-              `${article.contentHtml} ${article.tags?.join(' ')}`,
+              `${article.body} ${article.tags?.join(' ')}`,
               article.title
             );
             
@@ -256,8 +256,8 @@ async function scrapeBlogArticles(admin, shopId) {
               contentType: 'article',
               externalId: article.id,
               title: article.title,
-              content: article.contentHtml || '',
-              excerpt: article.excerpt || article.contentHtml?.substring(0, 300) + '...' || '',
+              content: article.body || '',
+              excerpt: article.excerpt || article.body?.substring(0, 300) + '...' || '',
               url: `/blogs/${blog.handle}/${article.handle}`,
               tags: article.tags?.join(', ') || '',
               author: '',
