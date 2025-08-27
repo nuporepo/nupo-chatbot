@@ -1,6 +1,7 @@
 import { json } from "@remix-run/node";
 import prisma from "../db.server";
 import OpenAI from "openai";
+import { shouldAutoScrape, triggerAutoScrape } from "../utils/auto-scraper";
 
 // Helper functions for Shopify API integration
 async function getStoreContext(shopDomain) {
@@ -15,16 +16,51 @@ async function getStoreContext(shopDomain) {
 
 async function searchProducts(shopDomain, { query, collection, limit = 5 }) {
   try {
-    // For the public API, we need to use Shopify's Storefront API or Admin API
-    // This is a simplified version - in production you'd use proper Shopify API calls
     console.log(`🔍 Searching products for: ${query} in shop: ${shopDomain}`);
     
-    // Return mock data for now - you'll need to implement actual Shopify Storefront API calls
+    // Get the shop from database to access scraped content
+    const shop = await prisma.shop.findUnique({
+      where: { shopDomain },
+      include: { shopContent: true }
+    });
+    
+    if (!shop) {
+      console.log(`❌ Shop ${shopDomain} not found in database`);
+      return { products: [], query, total: 0 };
+    }
+    
+    // Search scraped content for products
+    let searchResults = shop.shopContent.filter(content => content.contentType === 'product' && content.isActive);
+    
+    if (query && query.trim()) {
+      const searchTerm = query.toLowerCase();
+      searchResults = searchResults.filter(product => 
+        product.searchableContent.includes(searchTerm) ||
+        product.title.toLowerCase().includes(searchTerm) ||
+        product.keywords?.toLowerCase().includes(searchTerm)
+      );
+    }
+    
+    // Limit results
+    searchResults = searchResults.slice(0, limit);
+    
+    // Format results for frontend
+    const products = searchResults.map(product => ({
+      id: product.externalId,
+      title: product.title,
+      description: product.content,
+      price: "See details", // We don't store price in scraped content
+      image: null, // We don't store images in scraped content
+      url: product.url,
+      available: product.isActive
+    }));
+    
+    console.log(`✅ Found ${products.length} products for "${query}"`);
+    
     return {
-      products: [],
+      products,
       query,
-      total: 0,
-      message: "Product search is being implemented for the public chatbot. Please use the admin version for full product integration."
+      total: products.length,
     };
   } catch (error) {
     console.error("Error searching products:", error);
@@ -132,13 +168,14 @@ Knowledge Base:
 ${shop.knowledgeBase.map(kb => `${kb.title}: ${kb.content}`).join('\n')}
 
 IMPORTANT RESPONSE GUIDELINES:
-- You are the expert for this store - never say "it looks like" or "seems like" - you KNOW the products
-- When showing products, present them professionally with clear structure
-- Always include product images when available
-- After showing products, ask a follow-up question to help narrow down their needs
-- Use confident, knowledgeable language - you're the expert here
-- Format product information clearly with proper spacing and structure
-- Always end with a specific question to guide the conversation forward
+- You are a helpful shopping assistant - keep communication simple and minimal
+- NEVER include URLs, technical details, or product codes in your responses  
+- When showing products: RESPOND WITH ONLY AN EMOJI (🛍️) OR EMPTY MESSAGE - NO TEXT AT ALL
+- Product cards show all the details automatically - NEVER repeat prices, descriptions, or features in text
+- For non-product questions, keep responses under 15 words
+- Only use text responses for questions about store policies, shipping, or general help
+- If results don't match what they asked for, try a different search term automatically
+- Act like a concise, helpful waiter - let the visual product cards do ALL the talking
 
 Current conversation context: Customer is asking about products or shopping assistance.`,
       },
@@ -154,6 +191,16 @@ Current conversation context: Customer is asking about products or shopping assi
 
     console.log("🤖 Calling OpenAI...");
     
+    // LOG THE COMPLETE PROMPT FOR DEBUGGING
+    console.log("📋 COMPLETE PROMPT TO OPENAI:");
+    console.log("=====================================");
+    conversationHistory.forEach((msg, index) => {
+      console.log(`[${index}] ROLE: ${msg.role}`);
+      console.log(`[${index}] CONTENT: ${msg.content}`);
+      console.log("-------------------------------------");
+    });
+    console.log("=====================================");
+    
     // Call OpenAI with function calling support
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
@@ -165,7 +212,7 @@ Current conversation context: Customer is asking about products or shopping assi
           type: "function",
           function: {
             name: "search_products",
-            description: "Search for products in the store. Use this when customers ask about products. After getting results, present them professionally with clear structure, include images, and ask a specific follow-up question to help narrow their needs.",
+            description: "Search for products in the store. Only in-stock products will be returned. IMPORTANT: When you use this function, respond with ONLY an empty message or a single emoji (like 🛍️). DO NOT include any text descriptions, prices, or product details - the product cards will show everything automatically. Let the visual cards do ALL the talking.",
             parameters: {
               type: "object",
               properties: {
