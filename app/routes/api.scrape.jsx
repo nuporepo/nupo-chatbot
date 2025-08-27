@@ -212,7 +212,7 @@ async function scrapeBlogArticles(admin, shopId) {
                     title
                     handle
                     body
-                    excerpt
+                    summary
                     tags
                     createdAt
                     updatedAt
@@ -242,7 +242,7 @@ async function scrapeBlogArticles(admin, shopId) {
             const searchableContent = processContentForSearch([
               article.title,
               article.body,
-              article.excerpt,
+              article.summary,
               article.tags?.join(' ')
             ].filter(Boolean).join(' '));
             
@@ -257,7 +257,7 @@ async function scrapeBlogArticles(admin, shopId) {
               externalId: article.id,
               title: article.title,
               content: article.body || '',
-              excerpt: article.excerpt || article.body?.substring(0, 300) + '...' || '',
+              excerpt: article.summary || article.body?.substring(0, 300) + '...' || '',
               url: `/blogs/${blog.handle}/${article.handle}`,
               tags: article.tags?.join(', ') || '',
               author: '',
