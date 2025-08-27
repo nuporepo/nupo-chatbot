@@ -92,55 +92,39 @@ async function getStoreContext(shopDomain) {
 
 async function searchProducts(shopDomain, { query, collection, limit = 5 }) {
   try {
-    console.log(`🔍 Searching Storefront API for: ${query} in shop: ${shopDomain}`);
-    
-    // Use Shopify Storefront API - NO AUTHENTICATION REQUIRED!
-    const storefrontQuery = `
-      query getProducts($first: Int!, $query: String) {
-        products(first: $first, query: $query) {
-          edges {
-            node {
-              id
-              title
-              handle
-              description
-              priceRange {
-                minVariantPrice {
-                  amount
-                  currencyCode
-                }
-              }
-              images(first: 1) {
-                edges {
-                  node {
-                    url
-                  }
-                }
-              }
-              variants(first: 1) {
-                edges {
-                  node {
-                    availableForSale
-                    price {
-                      amount
-                      currencyCode
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    `;
-    
+    console.log(`🔍 Searching Admin API for: ${query} in shop: ${shopDomain}`);
+
+    // Get the shop and session for Admin API access
+    const shop = await prisma.shop.findUnique({
+      where: { shopDomain }
+    });
+
+    if (!shop) {
+      console.error("Shop not found:", shopDomain);
+      return { products: [], query, total: 0, error: "Shop not found" };
+    }
+
+    // Get the most recent session for this shop
+    const session = await prisma.session.findFirst({
+      where: { shop: shopDomain },
+      orderBy: { updatedAt: 'desc' }
+    });
+
+    if (!session || !session.accessToken) {
+      console.error("No valid session found for shop:", shopDomain);
+      return { products: [], query, total: 0, error: "No valid session" };
+    }
+
+    console.log(`🔑 Using session: ${session.id} for shop: ${session.shop}`);
+
     // Build intelligent search query
     let shopifyQuery = '';
     if (query && query.trim()) {
       let searchTerms = query.toLowerCase().trim();
-      
-      // Map customer language to product terms  
+
+      // Map customer language to product terms
       const termMappings = {
+        'vlcd': 'diet OR TDR OR "Total Diet Replacement" OR "meal replacement" OR VLCD OR "very low calorie"',
         'diet': 'diet OR TDR OR "Total Diet Replacement" OR "meal replacement"',
         'shake': 'shake OR smoothie OR drink OR liquid',
         'bar': 'bar OR snack',
@@ -149,66 +133,99 @@ async function searchProducts(shopDomain, { query, collection, limit = 5 }) {
         'strawberry': 'strawberry OR berry',
         'protein': 'protein OR whey'
       };
-      
+
       // Apply mappings
       Object.keys(termMappings).forEach(term => {
         if (searchTerms.includes(term)) {
           searchTerms = searchTerms.replace(new RegExp(term, 'gi'), termMappings[term]);
         }
       });
-      
+
       shopifyQuery = searchTerms;
       console.log(`🧠 Mapped search: "${query}" -> "${shopifyQuery}"`);
     }
-    
-    // Call Shopify Storefront API (public, no auth needed!)
-    const response = await fetch(`https://${shopDomain}/api/2023-10/graphql.json`, {
+
+    // Use Admin API GraphQL
+    const adminQuery = `
+      query getProducts($first: Int!, $query: String) {
+        products(first: $first, query: $query) {
+          edges {
+            node {
+              id
+              title
+              handle
+              description
+              priceRangeV2 {
+                minVariantPrice {
+                  amount
+                  currencyCode
+                }
+              }
+              featuredImage {
+                url
+              }
+              variants(first: 1) {
+                edges {
+                  node {
+                    availableForSale
+                    price
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    `;
+
+    // Call Shopify Admin API
+    const response = await fetch(`https://${shopDomain}/admin/api/2023-10/graphql.json`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Accept': 'application/json',
+        'X-Shopify-Access-Token': session.accessToken,
       },
       body: JSON.stringify({
-        query: storefrontQuery,
+        query: adminQuery,
         variables: {
           first: limit,
           query: shopifyQuery || null
         }
       })
     });
-    
+
     const result = await response.json();
-    
+
     if (result.errors) {
-      console.error('Storefront API errors:', result.errors);
+      console.error('Admin API errors:', result.errors);
       return { products: [], query, total: 0, error: 'Search failed' };
     }
-    
+
     if (!result.data || !result.data.products) {
       console.error('No products data returned');
       return { products: [], query, total: 0 };
     }
-    
+
     // Format results for frontend
     const products = result.data.products.edges.map(({ node: product }) => ({
       id: product.id,
       title: product.title,
       description: product.description?.replace(/<[^>]*>/g, '').substring(0, 200) || '',
-      price: `${product.priceRange.minVariantPrice.amount} ${product.priceRange.minVariantPrice.currencyCode}`,
-      image: product.images.edges[0]?.node.url || null,
+      price: `${product.priceRangeV2.minVariantPrice.amount} ${product.priceRangeV2.minVariantPrice.currencyCode}`,
+      image: product.featuredImage?.url || null,
       url: `/products/${product.handle}`,
       available: product.variants.edges[0]?.node.availableForSale || false
     }));
-    
-    console.log(`✅ Found ${products.length} products via Storefront API for "${query}"`);
-    
+
+    console.log(`✅ Found ${products.length} products via Admin API for "${query}"`);
+
     return {
       products,
       query,
       total: products.length,
     };
   } catch (error) {
-    console.error("Error searching Storefront API:", error);
+    console.error("Error searching Admin API:", error);
     return {
       products: [],
       query,
