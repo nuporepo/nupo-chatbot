@@ -102,7 +102,19 @@ async function scrapeProducts(admin, shopId) {
       variables: { first: 50, after: cursor }
     });
     
+    console.log(`🔍 GraphQL Response Status: ${response.status}`);
+    
+    if (!response.ok) {
+      console.error(`❌ GraphQL request failed:`, response.status, response.statusText);
+      throw new Error(`GraphQL request failed: ${response.status} ${response.statusText}`);
+    }
+    
     const data = await response.json();
+    
+    if (data.errors) {
+      console.error(`❌ GraphQL errors:`, data.errors);
+      throw new Error(`GraphQL errors: ${JSON.stringify(data.errors)}`);
+    }
     
     if (data.data?.products?.edges) {
       for (const edge of data.data.products.edges) {
@@ -307,7 +319,19 @@ async function scrapeCollections(admin, shopId) {
       variables: { first: 50, after: cursor }
     });
     
+    console.log(`📁 Collections GraphQL Response Status: ${response.status}`);
+    
+    if (!response.ok) {
+      console.error(`❌ Collections GraphQL request failed:`, response.status, response.statusText);
+      throw new Error(`Collections GraphQL request failed: ${response.status} ${response.statusText}`);
+    }
+    
     const data = await response.json();
+    
+    if (data.errors) {
+      console.error(`❌ Collections GraphQL errors:`, data.errors);
+      throw new Error(`Collections GraphQL errors: ${JSON.stringify(data.errors)}`);
+    }
     
     if (data.data?.collections?.edges) {
       for (const edge of data.data.collections.edges) {
