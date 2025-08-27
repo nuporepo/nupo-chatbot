@@ -1,8 +1,7 @@
 import { json } from "@remix-run/node";
-import prisma from "../db.server";
 
 // Import the scraping functions from api.scrape
-async function performFullScrape(admin, shopId, shopDomain) {
+async function performFullScrape(admin, shopId, shopDomain, prisma) {
   // Re-import the scraping logic here or create a shared module
   console.log(`🕒 CRON: Starting automated scrape for ${shopDomain}...`);
   
@@ -128,6 +127,9 @@ async function performFullScrape(admin, shopId, shopDomain) {
 }
 
 export const action = async ({ request }) => {
+  // Import server-only modules inside the action
+  const prisma = (await import("../db.server")).default;
+  
   // Verify this is a cron request (in production, you'd verify the cron secret)
   const authHeader = request.headers.get('authorization');
   const cronSecret = process.env.CRON_SECRET || 'dev-cron-secret';
