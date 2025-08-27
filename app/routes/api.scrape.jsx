@@ -349,8 +349,8 @@ async function scrapeCollections(admin, shopId) {
 }
 
 // Main scraping function
-async function performFullScrape(admin, shopId) {
-  console.log("🚀 Starting full shop scrape...");
+async function performFullScrape(admin, shopId, shopDomain) {
+  console.log(`🚀 Starting full shop scrape for ${shopDomain}...`);
   
   try {
     // Create scraping job
@@ -490,15 +490,20 @@ export const action = async ({ request }) => {
           return json({ error: "A scraping job is already running" }, { status: 400 });
         }
         
-        // Start scraping in background
-        performFullScrape(admin, shop.id).catch(error => {
-          console.error("Background scraping failed:", error);
-        });
-        
-        return json({ 
-          success: true, 
-          message: "Scraping job started. This may take a few minutes." 
-        });
+        // Start scraping immediately with current admin session
+        try {
+          const result = await performFullScrape(admin, shop.id, session.shop);
+          return json({ 
+            success: true, 
+            message: "Scraping completed successfully!",
+            result
+          });
+        } catch (scrapeError) {
+          console.error("Scraping failed:", scrapeError);
+          return json({ 
+            error: `Scraping failed: ${scrapeError.message}` 
+          }, { status: 500 });
+        }
         
       case "get_status":
         const latestJob = await prisma.scrapingJob.findFirst({

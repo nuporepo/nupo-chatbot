@@ -7,7 +7,7 @@ async function getStoreContext(shopDomain) {
   // For public API, we'll create a simplified store context
   // In production, you'd want to cache this or get it from your database
   return {
-    shop: { name: shopDomain.replace('.myshopify.com', ''), currencyCode: 'USD' },
+    shop: { name: shopDomain.replace('.myshopify.com', ''), currencyCode: 'EUR' },
     collections: [],
     productCount: "Many",
   };

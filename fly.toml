@@ -14,6 +14,7 @@ primary_region = 'fra'
   SHOPIFY_APP_URL = "https://nupo-chatbot.fly.dev"
   HOST = "0.0.0.0"
   PORT = "3000"
+  CRON_SECRET = "nupo-cron-2025"
 
 # Mount the volume for persistent SQLite database
 [mounts]
@@ -23,9 +24,9 @@ primary_region = 'fra'
 [http_service]
   internal_port = 3000
   force_https = true
-  auto_stop_machines = 'stop'
+  auto_stop_machines = 'off'
   auto_start_machines = true
-  min_machines_running = 0
+  min_machines_running = 1
   processes = ['app']
 
 # Run database migrations on deploy
@@ -33,7 +34,7 @@ primary_region = 'fra'
   release_command = "npx prisma migrate deploy"
 
 [[vm]]
-  memory = '1gb'
+  memory = '2gb'
   cpu_kind = 'shared'
-  cpus = 1
-  memory_mb = 1024
+  cpus = 2
+  memory_mb = 2048
