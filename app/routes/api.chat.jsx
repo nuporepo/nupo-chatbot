@@ -3,6 +3,82 @@ import prisma from "../db.server";
 import OpenAI from "openai";
 // import { shouldAutoScrape, triggerAutoScrape } from "../utils/auto-scraper";
 
+// Intelligent product search with fuzzy matching and context understanding
+function intelligentProductSearch(products, query) {
+  const searchTerm = query.toLowerCase().trim();
+  
+  // Common misspellings and variations
+  const corrections = {
+    'chocolat': 'chocolate',
+    'chokolate': 'chocolate', 
+    'choclate': 'chocolate',
+    'chocolade': 'chocolate',
+    'deit': 'diet',
+    'dieet': 'diet',
+    'lite': 'diet',
+    'light': 'diet',
+    'low cal': 'diet',
+    'lowcal': 'diet'
+  };
+  
+  // Apply corrections
+  let correctedQuery = searchTerm;
+  Object.keys(corrections).forEach(mistake => {
+    correctedQuery = correctedQuery.replace(new RegExp(mistake, 'gi'), corrections[mistake]);
+  });
+  
+  // Extract intent and context
+  const words = correctedQuery.split(/\s+/).filter(word => word.length > 2);
+  
+  // Score products based on relevance
+  const scoredProducts = products.map(product => {
+    const title = product.title.toLowerCase();
+    const content = product.content?.toLowerCase() || '';
+    const searchable = product.searchableContent?.toLowerCase() || '';
+    const keywords = product.keywords?.toLowerCase() || '';
+    
+    let score = 0;
+    
+    // Exact title match gets highest score
+    if (title.includes(correctedQuery)) score += 100;
+    
+    // All words found in title
+    if (words.every(word => title.includes(word))) score += 80;
+    
+    // All words found anywhere in product
+    if (words.every(word => 
+      title.includes(word) || content.includes(word) || 
+      searchable.includes(word) || keywords.includes(word)
+    )) score += 60;
+    
+    // Partial matches
+    words.forEach(word => {
+      if (title.includes(word)) score += 20;
+      if (content.includes(word)) score += 10;
+      if (searchable.includes(word)) score += 15;
+      if (keywords.includes(word)) score += 25;
+    });
+    
+    // Context-aware scoring for diet + chocolate
+    if (correctedQuery.includes('diet') && correctedQuery.includes('chocolate')) {
+      if (title.includes('diet') && (title.includes('chocolate') || content.includes('chocolate'))) {
+        score += 150; // High boost for diet chocolate products
+      }
+      if (title.includes('chocolate') && (content.includes('diet') || content.includes('meal replacement'))) {
+        score += 120; // Chocolate diet products
+      }
+    }
+    
+    return { product, score };
+  });
+  
+  // Return products sorted by relevance score, only those with score > 0
+  return scoredProducts
+    .filter(item => item.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .map(item => item.product);
+}
+
 // Helper functions for Shopify API integration
 async function getStoreContext(shopDomain) {
   // For public API, we'll create a simplified store context
@@ -33,12 +109,7 @@ async function searchProducts(shopDomain, { query, collection, limit = 5 }) {
     let searchResults = shop.shopContent.filter(content => content.contentType === 'product' && content.isActive);
     
     if (query && query.trim()) {
-      const searchTerm = query.toLowerCase();
-      searchResults = searchResults.filter(product => 
-        product.searchableContent.includes(searchTerm) ||
-        product.title.toLowerCase().includes(searchTerm) ||
-        product.keywords?.toLowerCase().includes(searchTerm)
-      );
+      searchResults = intelligentProductSearch(shop.shopContent.filter(content => content.contentType === 'product' && content.isActive), query);
     }
     
     // Limit results
@@ -168,14 +239,14 @@ Knowledge Base:
 ${shop.knowledgeBase.map(kb => `${kb.title}: ${kb.content}`).join('\n')}
 
 IMPORTANT RESPONSE GUIDELINES:
-- You are a helpful shopping assistant - keep communication simple and minimal
-- NEVER include URLs, technical details, or product codes in your responses  
-- When showing products: RESPOND WITH ONLY AN EMOJI (🛍️) OR EMPTY MESSAGE - NO TEXT AT ALL
-- Product cards show all the details automatically - NEVER repeat prices, descriptions, or features in text
-- For non-product questions, keep responses under 15 words
-- Only use text responses for questions about store policies, shipping, or general help
-- If results don't match what they asked for, try a different search term automatically
-- Act like a concise, helpful waiter - let the visual product cards do ALL the talking
+- You are an intelligent shopping assistant who understands customer intent and context
+- When customers ask for products, think about what they really mean (e.g., "diet chocolate" could mean chocolate diet products, low-calorie chocolate, or chocolate-flavored diet items)
+- Give brief, helpful responses that show you understand their needs
+- Use natural, conversational language appropriate for the customer
+- AFTER showing products: Let the product cards display all details - don't repeat information
+- If you show multiple options, briefly explain why they're relevant to the customer's request
+- Be honest if you can't find exactly what they want, but offer smart alternatives
+- Think like a knowledgeable shop assistant who really understands the products and customer needs
 
 Current conversation context: Customer is asking about products or shopping assistance.`,
       },
@@ -212,7 +283,7 @@ Current conversation context: Customer is asking about products or shopping assi
           type: "function",
           function: {
             name: "search_products",
-            description: "Search for products in the store. Only in-stock products will be returned. IMPORTANT: When you use this function, respond with ONLY an empty message or a single emoji (like 🛍️). DO NOT include any text descriptions, prices, or product details - the product cards will show everything automatically. Let the visual cards do ALL the talking.",
+            description: "Search for products in the store with intelligent matching. The search handles misspellings, understands context (e.g., 'diet chocolate' finds chocolate diet products), and ranks results by relevance. Only in-stock products will be returned. Give a brief, contextual response that shows you understand what the customer is looking for, then let the product cards display the details.",
             parameters: {
               type: "object",
               properties: {
