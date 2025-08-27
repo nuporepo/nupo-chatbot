@@ -403,8 +403,7 @@ async function performFullScrape(admin, shopId, shopDomain) {
     for (let i = 0; i < allContent.length; i += batchSize) {
       const batch = allContent.slice(i, i + batchSize);
       await prisma.shopContent.createMany({
-        data: batch,
-        skipDuplicates: true
+        data: batch
       });
       processed += batch.length;
       
