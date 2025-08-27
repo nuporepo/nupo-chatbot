@@ -92,30 +92,10 @@ async function getStoreContext(shopDomain) {
 
 async function searchProducts(shopDomain, { query, collection, limit = 5 }) {
   try {
-    console.log(`🔍 Searching products for: ${query} in shop: ${shopDomain}`);
+    console.log(`🔍 Searching Storefront API for: ${query} in shop: ${shopDomain}`);
     
-    // Get the shop from database to get session info
-    const shop = await prisma.shop.findUnique({
-      where: { shopDomain }
-    });
-    
-    if (!shop) {
-      console.log(`❌ Shop ${shopDomain} not found in database`);
-      return { products: [], query, total: 0 };
-    }
-
-    // Get session for this shop
-    const session = await prisma.session.findFirst({
-      where: { shop: shopDomain }
-    });
-    
-    if (!session) {
-      console.log(`❌ No session found for shop ${shopDomain}`);
-      return { products: [], query, total: 0 };
-    }
-
-    // Use GraphQL to search Shopify products directly
-    const searchQuery = `
+    // Use Shopify Storefront API - NO AUTHENTICATION REQUIRED!
+    const storefrontQuery = `
       query getProducts($first: Int!, $query: String) {
         products(first: $first, query: $query) {
           edges {
@@ -141,6 +121,10 @@ async function searchProducts(shopDomain, { query, collection, limit = 5 }) {
                 edges {
                   node {
                     availableForSale
+                    price {
+                      amount
+                      currencyCode
+                    }
                   }
                 }
               }
@@ -150,12 +134,12 @@ async function searchProducts(shopDomain, { query, collection, limit = 5 }) {
       }
     `;
     
-    // Build Shopify search query with intelligent term mapping
+    // Build intelligent search query
     let shopifyQuery = '';
     if (query && query.trim()) {
       let searchTerms = query.toLowerCase().trim();
       
-      // Map customer language to product terms
+      // Map customer language to product terms  
       const termMappings = {
         'diet': 'diet OR TDR OR "Total Diet Replacement" OR "meal replacement"',
         'shake': 'shake OR smoothie OR drink OR liquid',
@@ -177,17 +161,18 @@ async function searchProducts(shopDomain, { query, collection, limit = 5 }) {
       console.log(`🧠 Mapped search: "${query}" -> "${shopifyQuery}"`);
     }
     
-    const response = await fetch(`https://${shopDomain}/admin/api/2023-10/graphql.json`, {
+    // Call Shopify Storefront API (public, no auth needed!)
+    const response = await fetch(`https://${shopDomain}/api/2023-10/graphql.json`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-Shopify-Access-Token': session.accessToken,
+        'Accept': 'application/json',
       },
       body: JSON.stringify({
-        query: searchQuery,
+        query: storefrontQuery,
         variables: {
           first: limit,
-          query: shopifyQuery || undefined
+          query: shopifyQuery || null
         }
       })
     });
@@ -195,26 +180,13 @@ async function searchProducts(shopDomain, { query, collection, limit = 5 }) {
     const result = await response.json();
     
     if (result.errors) {
-      console.error('GraphQL errors:', result.errors);
-      
-      // Check if it's an authentication error
-      const authError = result.errors.some(error => 
-        error.message.includes('Invalid API key') || 
-        error.message.includes('access token') ||
-        error.message.includes('unrecognized login')
-      );
-      
-      if (authError) {
-        console.error('❌ Authentication failed - session may need to be refreshed');
-        return { 
-          products: [], 
-          query, 
-          total: 0, 
-          error: 'Authentication failed - please reinstall the app or refresh permissions' 
-        };
-      }
-      
+      console.error('Storefront API errors:', result.errors);
       return { products: [], query, total: 0, error: 'Search failed' };
+    }
+    
+    if (!result.data || !result.data.products) {
+      console.error('No products data returned');
+      return { products: [], query, total: 0 };
     }
     
     // Format results for frontend
@@ -228,7 +200,7 @@ async function searchProducts(shopDomain, { query, collection, limit = 5 }) {
       available: product.variants.edges[0]?.node.availableForSale || false
     }));
     
-    console.log(`✅ Found ${products.length} products for "${query}"`);
+    console.log(`✅ Found ${products.length} products via Storefront API for "${query}"`);
     
     return {
       products,
@@ -236,7 +208,7 @@ async function searchProducts(shopDomain, { query, collection, limit = 5 }) {
       total: products.length,
     };
   } catch (error) {
-    console.error("Error searching products:", error);
+    console.error("Error searching Storefront API:", error);
     return {
       products: [],
       query,
