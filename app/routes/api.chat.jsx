@@ -1,85 +1,8 @@
 import { json } from "@remix-run/node";
-import prisma from "../db.server";
 import OpenAI from "openai";
 // import { shouldAutoScrape, triggerAutoScrape } from "../utils/auto-scraper";
 
-// Intelligent product search with fuzzy matching and context understanding
-function intelligentProductSearch(products, query) {
-  const searchTerm = query.toLowerCase().trim();
-  
-  // Common misspellings and variations
-  const corrections = {
-    'chocolat': 'chocolate',
-    'chokolate': 'chocolate', 
-    'choclate': 'chocolate',
-    'chocolade': 'chocolate',
-    'deit': 'diet',
-    'dieet': 'diet',
-    'lite': 'diet',
-    'light': 'diet',
-    'low cal': 'diet',
-    'lowcal': 'diet'
-  };
-  
-  // Apply corrections
-  let correctedQuery = searchTerm;
-  Object.keys(corrections).forEach(mistake => {
-    correctedQuery = correctedQuery.replace(new RegExp(mistake, 'gi'), corrections[mistake]);
-  });
-  
-  // Extract intent and context
-  const words = correctedQuery.split(/\s+/).filter(word => word.length > 2);
-  
-  // Score products based on relevance
-  const scoredProducts = products.map(product => {
-    const title = product.title.toLowerCase();
-    const content = product.content?.toLowerCase() || '';
-    const searchable = product.searchableContent?.toLowerCase() || '';
-    const keywords = product.keywords?.toLowerCase() || '';
-    
-    let score = 0;
-    
-    // Exact title match gets highest score
-    if (title.includes(correctedQuery)) score += 100;
-    
-    // All words found in title
-    if (words.every(word => title.includes(word))) score += 80;
-    
-    // All words found anywhere in product
-    if (words.every(word => 
-      title.includes(word) || content.includes(word) || 
-      searchable.includes(word) || keywords.includes(word)
-    )) score += 60;
-    
-    // Partial matches
-    words.forEach(word => {
-      if (title.includes(word)) score += 20;
-      if (content.includes(word)) score += 10;
-      if (searchable.includes(word)) score += 15;
-      if (keywords.includes(word)) score += 25;
-    });
-    
-    // Context-aware scoring for diet + chocolate
-    if (correctedQuery.includes('diet') && correctedQuery.includes('chocolate')) {
-      if (title.includes('diet') && (title.includes('chocolate') || content.includes('chocolate'))) {
-        score += 150; // High boost for diet chocolate products
-      }
-      if (title.includes('chocolate') && (content.includes('diet') || content.includes('meal replacement'))) {
-        score += 120; // Chocolate diet products
-      }
-    }
-    
-    return { product, score };
-  });
-  
-  // Return products sorted by relevance score, only those with score > 0
-  return scoredProducts
-    .filter(item => item.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .map(item => item.product);
-}
-
-// Helper functions for Shopify API integration
+// Helper functions
 async function getStoreContext(shopDomain) {
   // For public API, we'll create a simplified store context
   // In production, you'd want to cache this or get it from your database
@@ -90,154 +13,10 @@ async function getStoreContext(shopDomain) {
   };
 }
 
-async function searchProducts(shopDomain, { query, collection, limit = 5 }) {
-  try {
-    console.log(`🔍 Searching Admin API for: ${query} in shop: ${shopDomain}`);
-
-    // Get the shop and session for Admin API access
-    const shop = await prisma.shop.findUnique({
-      where: { shopDomain }
-    });
-
-    if (!shop) {
-      console.error("Shop not found:", shopDomain);
-      return { products: [], query, total: 0, error: "Shop not found" };
-    }
-
-    // Get the most recent session for this shop
-    const session = await prisma.session.findFirst({
-      where: { shop: shopDomain },
-      orderBy: { id: 'desc' }
-    });
-
-    if (!session || !session.accessToken) {
-      console.error("No valid session found for shop:", shopDomain);
-      return { products: [], query, total: 0, error: "No valid session" };
-    }
-
-    console.log(`🔑 Using session: ${session.id} for shop: ${session.shop}`);
-
-    // Build intelligent search query
-    let shopifyQuery = '';
-    if (query && query.trim()) {
-      let searchTerms = query.toLowerCase().trim();
-
-      // Map customer language to product terms
-      const termMappings = {
-        'vlcd': 'diet OR TDR OR "Total Diet Replacement" OR "meal replacement" OR VLCD OR "very low calorie"',
-        'diet': 'diet OR TDR OR "Total Diet Replacement" OR "meal replacement"',
-        'shake': 'shake OR smoothie OR drink OR liquid',
-        'bar': 'bar OR snack',
-        'chocolate': 'chocolate OR cocoa OR choco',
-        'vanilla': 'vanilla',
-        'strawberry': 'strawberry OR berry',
-        'protein': 'protein OR whey'
-      };
-
-      // Apply mappings
-      Object.keys(termMappings).forEach(term => {
-        if (searchTerms.includes(term)) {
-          searchTerms = searchTerms.replace(new RegExp(term, 'gi'), termMappings[term]);
-        }
-      });
-
-      shopifyQuery = searchTerms;
-      console.log(`🧠 Mapped search: "${query}" -> "${shopifyQuery}"`);
-    }
-
-    // Use Admin API GraphQL
-    const adminQuery = `
-      query getProducts($first: Int!, $query: String) {
-        products(first: $first, query: $query) {
-          edges {
-            node {
-              id
-              title
-              handle
-              description
-              priceRangeV2 {
-                minVariantPrice {
-                  amount
-                  currencyCode
-                }
-              }
-              featuredImage {
-                url
-              }
-              variants(first: 1) {
-                edges {
-                  node {
-                    availableForSale
-                    price
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    `;
-
-    // Call Shopify Admin API
-    const response = await fetch(`https://${shopDomain}/admin/api/2023-10/graphql.json`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Shopify-Access-Token': session.accessToken,
-      },
-      body: JSON.stringify({
-        query: adminQuery,
-        variables: {
-          first: limit,
-          query: shopifyQuery || null
-        }
-      })
-    });
-
-    const result = await response.json();
-
-    if (result.errors) {
-      console.error('Admin API errors:', result.errors);
-      return { products: [], query, total: 0, error: 'Search failed' };
-    }
-
-    if (!result.data || !result.data.products) {
-      console.error('No products data returned');
-      return { products: [], query, total: 0 };
-    }
-
-    // Format results for frontend
-    const products = result.data.products.edges.map(({ node: product }) => ({
-      id: product.id,
-      title: product.title,
-      description: product.description?.replace(/<[^>]*>/g, '').substring(0, 200) || '',
-      price: `${product.priceRangeV2.minVariantPrice.amount} ${product.priceRangeV2.minVariantPrice.currencyCode}`,
-      image: product.featuredImage?.url || null,
-      url: `/products/${product.handle}`,
-      available: product.variants.edges[0]?.node.availableForSale || false
-    }));
-
-    console.log(`✅ Found ${products.length} products via Admin API for "${query}"`);
-
-    return {
-      products,
-      query,
-      total: products.length,
-    };
-  } catch (error) {
-    console.error("Error searching Admin API:", error);
-    return {
-      products: [],
-      query,
-      total: 0,
-      error: "Failed to search products",
-    };
-  }
-}
-
 // Search pre-scraped store content (products, articles, collections, pages)
 async function searchStoreContent(shopId, { query, contentTypes = [], limit = 5 }) {
   try {
+    const prisma = (await import("../db.server")).default;
     const where = {
       shopId,
       isActive: true,
@@ -303,6 +82,7 @@ export const action = async ({ request }) => {
     console.log("🏪 Shop:", shopDomain);
 
     // Get shop configuration
+    const prisma = (await import("../db.server")).default;
     const shop = await prisma.shop.findUnique({
       where: { shopDomain },
       include: {
@@ -330,13 +110,14 @@ export const action = async ({ request }) => {
     const openai = new OpenAI({ apiKey });
 
     // Get or create chat session
-    let chatSession = await prisma.chatSession.findUnique({
+    const prisma2 = (await import("../db.server")).default;
+    let chatSession = await prisma2.chatSession.findUnique({
       where: { sessionId },
       include: { messages: { orderBy: { timestamp: 'asc' } } },
     });
 
     if (!chatSession) {
-      chatSession = await prisma.chatSession.create({
+      chatSession = await prisma2.chatSession.create({
         data: {
           sessionId,
           shopId: shop.id,
@@ -351,7 +132,7 @@ export const action = async ({ request }) => {
     }
 
     // Save user message
-    await prisma.chatMessage.create({
+    await prisma2.chatMessage.create({
       data: {
         sessionId: chatSession.id,
         role: 'user',
@@ -545,7 +326,8 @@ export const action = async ({ request }) => {
     // Track analytics if enabled
     if (shop.botConfig.enableConversationAnalytics) {
       // Simple analytics tracking for public chatbot
-      await prisma.popularQuestions.upsert({
+      const prisma3 = (await import("../db.server")).default;
+      await prisma3.popularQuestions.upsert({
         where: { 
           shopId_question: { shopId: shop.id, question: message.toLowerCase().trim() }
         },
