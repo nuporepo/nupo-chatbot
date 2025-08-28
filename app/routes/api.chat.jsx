@@ -144,63 +144,6 @@ export const action = async ({ request }) => {
     // Get store context
     const storeData = await getStoreContext(shopDomain);
 
-    // Create conversation history for OpenAI (trim history to reduce tokens)
-    const recentMessages = (chatSession.messages || []).slice(-8).map(msg => ({
-      role: msg.role,
-      content: msg.content,
-    }));
-
-    const conversationHistory = [
-      {
-        role: 'system',
-        content: `${shop.botConfig.systemPrompt}
- 
- Store Information:
- - Store: ${storeData.shop.name}
- - Domain: ${shopDomain}
- - Currency: ${storeData.shop.currencyCode}
- - Products available: ${storeData.productCount}
- - Collections: ${storeData.collections.map(c => c.title).join(', ')}
- - When you need store facts or policy details, use tools to fetch them (do not guess)
- 
- IMPORTANT RESPONSE GUIDELINES:
- - You are an intelligent shopping assistant who understands customer intent and context
- - When customers ask for products, think about what they really mean (e.g., "diet chocolate" could mean chocolate diet products, low-calorie chocolate, or chocolate-flavored diet items)
- - Give brief, helpful responses that show you understand their needs
- - Use natural, conversational language appropriate for the customer
- - AFTER showing products: Let the product cards display all details - don't repeat information
- - If you show multiple options, briefly explain why they're relevant to the customer's request
- - Be honest if you can't find exactly what they want, but offer smart alternatives
- - Think like a knowledgeable shop assistant who really understands the products and customer needs
- - Ask one short clarifying question if intent is ambiguous (never list everything blindly)
- - Offer smart choices (e.g., single item vs bundle) only after checking interest
- 
- STRICT STORE-ONLY POLICY:
- - You MUST answer ONLY using information from this specific store (its products, collections, pages, and articles). Do not invent facts or use outside knowledge.
- - If the user asks anything unrelated to this store or you lack content, reply briefly: "I can help with information and products from this store only."
- - Prefer using the provided tools to search products and store content before answering.
- 
- Current conversation context: Customer is asking about products or shopping assistance.`,
-      },
-      ...recentMessages,
-      {
-        role: 'user',
-        content: message,
-      },
-    ];
-
-    console.log("🤖 Calling OpenAI...");
-    
-    // LOG THE COMPLETE PROMPT FOR DEBUGGING
-    console.log("📋 COMPLETE PROMPT TO OPENAI:");
-    console.log("=====================================");
-    conversationHistory.forEach((msg, index) => {
-      console.log(`[${index}] ROLE: ${msg.role}`);
-      console.log(`[${index}] CONTENT: ${msg.content}`);
-      console.log("-------------------------------------");
-    });
-    console.log("=====================================");
-    
     // Helper: retry OpenAI calls on 429s with short capped wait
     async function createChatCompletionWithRetry(params, maxRetries = 2) {
       let attempt = 0;
@@ -224,68 +167,29 @@ export const action = async ({ request }) => {
       }
     }
 
-    // Call OpenAI with function calling support
+    // TOOL-FIRST: search store content using the user's message
+    const functionResults = await searchStoreContent(shop.id, { query: message, contentTypes: ['product'], limit: 6 });
+
+    // Build a tiny context for one short, intelligent reply (no tools)
+    const titles = (functionResults.items || []).map((p, i) => `${i + 1}. ${p.title}`).join('\n');
+    const conversationHistory = [
+      {
+        role: 'system',
+        content: `You are a concise, store-only shopping assistant for ${storeData.shop.name}. Respond with ONE short sentence. If intent is unclear, ask ONE brief clarifying question. Do not repeat product details; cards will show them.`
+      },
+      { role: 'user', content: message },
+      { role: 'system', content: `Candidate products (titles only):\n${titles || 'None found'}` }
+    ];
+
+    console.log("🤖 Calling OpenAI (single completion)...");
     const completion = await createChatCompletionWithRetry({
       model: "gpt-4o-mini",
       messages: conversationHistory,
-      temperature: shop.botConfig.temperature,
-      max_tokens: shop.botConfig.maxTokens,
-      tools: [
-        // Removed raw search_products tool for public route to avoid "search engine" behavior
-        {
-          type: "function",
-          function: {
-            name: "search_store_content",
-            description: "Search the store's own content (products, articles, pages, collections) that has been scraped into the knowledge base. Use this for policy, FAQ, articles, or when validating store-specific info."
-            ,parameters: {
-              type: "object",
-              properties: {
-                query: {
-                  type: "string",
-                  description: "Text to search for within store content (title, keywords, searchableContent)."
-                },
-                contentTypes: {
-                  type: "array",
-                  items: { type: "string", enum: ["product", "article", "collection", "page"] },
-                  description: "Optional filter for content types"
-                },
-                limit: {
-                  type: "number",
-                  description: "Max number of items to return (default 5)"
-                }
-              },
-              required: []
-            }
-          }
-        }
-      ],
-      tool_choice: "auto",
+      temperature: Math.min(shop.botConfig.temperature, 0.7),
+      max_tokens: Math.min(shop.botConfig.maxTokens, 120),
     });
-
     console.log("🆔 OpenAI completion id:", completion.id);
     let assistantMessage = completion.choices[0].message;
-    let functionResults = null;
-
-    console.log("🤖 AI Response:", assistantMessage.content ?? "(tool-call only)");
-    console.log("🔧 Tool calls:", assistantMessage.tool_calls?.length || 0);
-
-    // Handle function calls
-    if (assistantMessage.tool_calls && assistantMessage.tool_calls.length > 0) {
-      const toolCall = assistantMessage.tool_calls[0];
-      const functionArgs = JSON.parse(toolCall.function.arguments);
-      
-      console.log("🛠️ Function call:", toolCall.function.name, functionArgs);
-
-      switch (toolCall.function.name) {
-        case "search_store_content":
-          functionResults = await searchStoreContent(shop.id, functionArgs);
-          break;
-      }
-
-      // Skip a second OpenAI call — product cards will display details
-      console.log("🛍️ Skipping follow-up call; letting product cards render.");
-      assistantMessage = { role: 'assistant', content: '' };
-    }
 
     // Save assistant message
     await prisma.chatMessage.create({
