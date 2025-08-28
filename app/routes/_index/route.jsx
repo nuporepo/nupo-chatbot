@@ -19,7 +19,7 @@ export default function App() {
   return (
     <div className={styles.index}>
       <div className={styles.content}>
-        <h1 className={styles.heading}>Nupo Chatbot - Your AI Waiter</h1>
+        <h1 className={styles.heading}>Shop Chatbot - Your AI Waiter</h1>
         <p className={styles.text}>
           Transform your online store with an AI shopping assistant that works like a professional waiter - helping customers browse, recommend products, manage carts, and handle everything except payment.
         </p>

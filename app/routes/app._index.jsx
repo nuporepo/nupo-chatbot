@@ -1007,6 +1007,15 @@ function ScrapingTab({ shop }) {
           Scrape your entire shop to make the AI aware of all products, blog articles, and collections. 
           This helps the AI provide more accurate and comprehensive answers to customers.
         </Text>
+        
+        <Banner tone="info">
+          <Text variant="bodyMd">
+            <strong>🤖 Auto-Scraping Enabled:</strong> Your shop content is automatically re-scraped every 24 hours 
+            when customers interact with the chatbot. This keeps your AI up-to-date with the latest products and content.
+            <br/><br/>
+            <strong>Data Override:</strong> Each scraping completely replaces old data with fresh content from your shop.
+          </Text>
+        </Banner>
 
         {/* Current Status */}
         <Card background="bg-surface-secondary">

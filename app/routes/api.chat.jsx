@@ -402,7 +402,7 @@ Current conversation context: Customer is asking about products or shopping assi
     let assistantMessage = completion.choices[0].message;
     let functionResults = null;
 
-    console.log("🤖 AI Response:", assistantMessage.content);
+    console.log("🤖 AI Response:", assistantMessage.content ?? "(tool-call only)");
     console.log("🔧 Tool calls:", assistantMessage.tool_calls?.length || 0);
 
     // Handle function calls
@@ -455,7 +455,7 @@ Current conversation context: Customer is asking about products or shopping assi
       data: {
         sessionId: chatSession.id,
         role: 'assistant',
-        content: assistantMessage.content,
+        content: assistantMessage.content ?? '',
         metadata: JSON.stringify(functionResults),
       },
     });
@@ -481,7 +481,7 @@ Current conversation context: Customer is asking about products or shopping assi
     }
 
     return json({
-      message: assistantMessage.content,
+      message: assistantMessage.content ?? '',
       sessionId: sessionId,
       metadata: functionResults,
     });

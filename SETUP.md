@@ -1,4 +1,4 @@
-# Nupo Chatbot Setup Guide
+# Shop Chatbot Setup Guide
 
 ## 🎉 Congratulations!
 
