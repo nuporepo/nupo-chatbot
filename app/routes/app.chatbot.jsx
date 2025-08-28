@@ -399,12 +399,13 @@ async function searchStoreContentPrisma(shopId, { query, contentTypes = [], limi
       where.contentType = { in: contentTypes };
     }
     const text = (query || '').trim();
+    const textLower = text.toLowerCase();
     if (text) {
       where.OR = [
-        { title: { contains: text, mode: 'insensitive' } },
-        { searchableContent: { contains: text.toLowerCase() } },
-        { keywords: { contains: text, mode: 'insensitive' } },
-        { tags: { contains: text, mode: 'insensitive' } },
+        { searchableContent: { contains: textLower } },
+        { keywords: { contains: textLower } },
+        { tags: { contains: textLower } },
+        { title: { contains: textLower } },
       ];
     }
 
