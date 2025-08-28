@@ -454,25 +454,49 @@ async function performFullScrape(admin, shopId, shopDomain) {
     allContent = allContent.concat(collections);
     totalItems += collections.length;
 
-    // Scrape pages
-    const pages = await scrapePages(admin, shopId);
-    allContent = allContent.concat(pages);
-    totalItems += pages.length;
+    // Scrape pages (skip if shop lacks pages API access)
+    try {
+      const pages = await scrapePages(admin, shopId);
+      allContent = allContent.concat(pages);
+      totalItems += pages.length;
+    } catch (error) {
+      if (error.message?.includes('Access denied') || error.message?.includes('is not a valid field')) {
+        console.log('⚠️ Skipping pages - missing read_content scope or Online Store not enabled');
+      } else {
+        throw error;
+      }
+    }
     
-    // Clear existing content and insert new
-    await prisma.shopContent.deleteMany({
-      where: { shopId }
-    });
-    
-    // Insert in batches to avoid memory issues
+    // Replace data safely: upsert in batches to avoid emptying on transient API issues
     const batchSize = 100;
     let processed = 0;
     
     for (let i = 0; i < allContent.length; i += batchSize) {
       const batch = allContent.slice(i, i + batchSize);
-      await prisma.shopContent.createMany({
-        data: batch
-      });
+      for (const item of batch) {
+        await prisma.shopContent.upsert({
+          where: {
+            shopId_contentType_externalId: {
+              shopId: item.shopId,
+              contentType: item.contentType,
+              externalId: item.externalId,
+            }
+          },
+          update: {
+            title: item.title,
+            content: item.content,
+            excerpt: item.excerpt,
+            url: item.url,
+            tags: item.tags,
+            publishedAt: item.publishedAt,
+            searchableContent: item.searchableContent,
+            keywords: item.keywords,
+            lastScraped: new Date(),
+            isActive: item.isActive,
+          },
+          create: item,
+        });
+      }
       processed += batch.length;
       
       // Update progress

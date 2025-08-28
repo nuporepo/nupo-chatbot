@@ -1092,6 +1092,13 @@ function ScrapingTab({ shop }) {
                     <Text variant="bodySm" color="subdued">Collections</Text>
                   </div>
                 )}
+
+                {contentStats.page && (
+                  <div>
+                    <Text variant="headingMd" color="attention">{contentStats.page}</Text>
+                    <Text variant="bodySm" color="subdued">Pages</Text>
+                  </div>
+                )}
               </InlineStack>
             </BlockStack>
           </Card>
@@ -1122,6 +1129,7 @@ function ScrapingTab({ shop }) {
           • All products (titles, descriptions, tags, variants)<br/>
           • Blog articles (content, tags, author info)<br/>
           • Collections (titles, descriptions)<br/>
+          • Pages (titles, page content)<br/>
           • SEO content and keywords for better search<br/><br/>
           
           <strong>How it helps:</strong><br/>
