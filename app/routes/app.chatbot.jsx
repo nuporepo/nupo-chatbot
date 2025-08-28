@@ -791,6 +791,10 @@ Current conversation context: Customer is asking about products or shopping assi
       if (functionResults && (functionResults.items?.length > 0 || functionResults.products?.length > 0)) {
         const items = functionResults.items || functionResults.products || [];
         
+        // If we have enriched product recommendations, return only product cards (no text)
+        if (functionResults.products?.length > 0) {
+          assistantMessage = { role: 'assistant', content: "🛍️" };
+        } else {
         // Also pull short knowledge snippets from articles/pages for definitions of user terms
         let knowledgeSnippets = '';
         try {
@@ -831,6 +835,7 @@ YOUR TASK:
         });
         console.log("🆔 OpenAI follow-up completion id:", followUpCompletion.id);
         assistantMessage = followUpCompletion.choices[0].message;
+        }
       } else {
         assistantMessage = { role: 'assistant', content: shop.botConfig.errorMessage || "I couldn't find any products matching your request. Can I help with something else?" };
       }
