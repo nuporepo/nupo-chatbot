@@ -167,18 +167,23 @@ export const action = async ({ request }) => {
       }
     }
 
-    // TOOL-FIRST: search store content using the user's message
-    const functionResults = await searchStoreContent(shop.id, { query: message, contentTypes: ['product'], limit: 6 });
+    // Retrieve relevant store content for this message
+    const productResults = await searchStoreContent(shop.id, { query: message, contentTypes: ['product'], limit: 6 });
+    const knowledgeResults = await searchStoreContent(shop.id, { query: message, contentTypes: ['article', 'page'], limit: 4 });
 
     // Build a tiny context for one short, intelligent reply (no tools)
-    const titles = (functionResults.items || []).map((p, i) => `${i + 1}. ${p.title}`).join('\n');
+    const titles = (productResults.items || []).map((p, i) => `${i + 1}. ${p.title}`).join('\n');
+    const snippets = (knowledgeResults.items || [])
+      .map((it, i) => `${i + 1}. ${it.title}: ${(it.excerpt || '').slice(0, 280)}`)
+      .join('\n');
     const conversationHistory = [
       {
         role: 'system',
         content: `You are a concise, store-only shopping assistant for ${storeData.shop.name}. Respond with ONE short sentence. If intent is unclear, ask ONE brief clarifying question. Do not repeat product details; cards will show them.`
       },
       { role: 'user', content: message },
-      { role: 'system', content: `Candidate products (titles only):\n${titles || 'None found'}` }
+      { role: 'system', content: `Candidate products (titles only):\n${titles || 'None found'}` },
+      { role: 'system', content: `Relevant store articles/pages (short snippets):\n${snippets || 'None found'}` }
     ];
 
     console.log("🤖 Calling OpenAI (single completion)...");
@@ -197,7 +202,7 @@ export const action = async ({ request }) => {
         sessionId: chatSession.id,
         role: 'assistant',
         content: assistantMessage.content ?? '',
-        metadata: JSON.stringify(functionResults),
+        metadata: JSON.stringify({ products: productResults, knowledge: knowledgeResults }),
       },
     });
 
@@ -225,7 +230,7 @@ export const action = async ({ request }) => {
     return json({
       message: assistantMessage.content ?? '',
       sessionId: sessionId,
-      metadata: functionResults,
+      metadata: { products: productResults, knowledge: knowledgeResults },
     });
 
   } catch (error) {

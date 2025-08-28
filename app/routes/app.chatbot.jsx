@@ -650,17 +650,17 @@ Store Information:
 - Collections: ${storeData.collections.map(c => c.title).join(', ')}
 ${customerMemoryContext}
 
-IMPORTANT RESPONSE GUIDELINES:
-- You are a helpful shopping assistant - keep communication simple and minimal
-- NEVER include URLs, technical details, or product codes in your responses  
-- When showing products: RESPOND WITH ONLY AN EMOJI (🛍️) OR EMPTY MESSAGE - NO TEXT AT ALL
-- Product cards show all the details automatically - NEVER repeat prices, descriptions, or features in text
-- For non-product questions, keep responses under 15 words
-- Only use text responses for questions about store policies, shipping, or general help
-- If results don't match what they asked for, try a different search term automatically
-- Act like a concise, helpful waiter - let the visual product cards do ALL the talking
-- Ask a brief clarifying question when the request is ambiguous (don't list everything)
-- Offer options (e.g., sizes, bundles) only after checking customer interest
+IMPORTANT RESPONSE GUIDELINES (AGENTIC COMMERCE STYLE):
+- Be a concise, proactive shopping waiter. Keep replies short and purposeful.
+- NEVER include URLs, technical details, or product codes.
+- When showing products: RESPOND WITH ONLY AN EMOJI (🛍️) OR EMPTY MESSAGE – NO TEXT.
+- Product cards contain all details – do not repeat specs, prices, or features in text.
+- Default to ONE short clarifying question (≤ 18 words) tailored to intent.
+- Use store articles/pages to understand user terms, but summarize in one line.
+- Prefer clarifying about flavor, format (shake/soup/bar), dietary needs, or plan duration before showing items.
+- Do not dump long explanations or lists; only show products after the user asks/accepts.
+- If results don't match, refine the search automatically and ask a better follow-up.
+- Offer options only after confirming interest.
 
 STRICT STORE-ONLY POLICY:
 - Answer ONLY using information from this store (products, collections, pages, articles). Do not use outside knowledge.
@@ -787,8 +787,53 @@ Current conversation context: Customer is asking about products or shopping assi
           break;
       }
 
-      // Skip follow-up; product cards will show details
-      assistantMessage = { role: 'assistant', content: '' };
+      // Generate a waiter-style clarifying reply (don't list products)
+      if (functionResults && (functionResults.items?.length > 0 || functionResults.products?.length > 0)) {
+        const items = functionResults.items || functionResults.products || [];
+        
+        // Also pull short knowledge snippets from articles/pages for definitions of user terms
+        let knowledgeSnippets = '';
+        try {
+          const knowledge = await searchStoreContentPrisma(shop.id, { query: message, contentTypes: ['article','page'], limit: 3 });
+          knowledgeSnippets = (knowledge.items || [])
+            .map((it, i) => `${i + 1}. ${it.title}: ${(it.excerpt || '').slice(0, 200)}`)
+            .join('\n');
+        } catch (_) {}
+
+        console.log("🤖 Calling OpenAI for follow-up response (waiter-style)...");
+        const followUpCompletion = await createChatCompletionWithRetry({
+          model: "gpt-4o-mini",
+          messages: [
+            {
+              role: 'system',
+              content: `${shop.botConfig.systemPrompt}
+
+Store Information:
+- Store: ${storeData.shop.name}
+- Domain: ${session.shop}
+- Currency: ${storeData.shop.currencyCode}
+
+ROLE & TONE:
+- Be a helpful waiter. Ask ONE short clarifying question tailored to the user's intent.
+- Do NOT list product names in text. Product cards will show separately.
+- If the user mentions any domain-specific term, use the knowledge snippets to understand and ask a relevant next step (e.g., preferred style, variant, or flavor) suitable for the store's vertical.
+
+KNOWLEDGE SNIPPETS (articles/pages):
+${knowledgeSnippets || 'None'}
+
+YOUR TASK:
+- Reply with a single sentence, asking a specific, friendly question like "Any flavors you prefer (e.g., strawberry, chocolate)?" or "Want me to show the available flavors?" Avoid listing products.`
+            },
+            { role: 'user', content: message }
+          ],
+          temperature: Math.min(shop.botConfig.temperature, 0.7),
+          max_tokens: Math.min(shop.botConfig.maxTokens, 60),
+        });
+        console.log("🆔 OpenAI follow-up completion id:", followUpCompletion.id);
+        assistantMessage = followUpCompletion.choices[0].message;
+      } else {
+        assistantMessage = { role: 'assistant', content: shop.botConfig.errorMessage || "I couldn't find any products matching your request. Can I help with something else?" };
+      }
     }
 
     // Save assistant message
