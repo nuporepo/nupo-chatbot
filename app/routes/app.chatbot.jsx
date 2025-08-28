@@ -315,6 +315,79 @@ async function searchProducts(admin, { query, collection, limit = 5 }) {
   }
 }
 
+// Recommend products using store content (not a raw search)
+async function recommendProducts(admin, shopId, { query = "", limit = 5 }) {
+  // 1) Load products from scraped store content
+  const items = await prisma.shopContent.findMany({
+    where: { shopId, contentType: 'product', isActive: true },
+    orderBy: { updatedAt: 'desc' },
+    take: 300,
+  });
+
+  // 2) Score by semantic-ish relevance without hardcoding domain rules
+  const q = (query || '').toLowerCase();
+  const words = q.split(/\s+/).filter(Boolean);
+
+  const ranked = items
+    .map(p => {
+      const title = (p.title || '').toLowerCase();
+      const body = (p.searchableContent || p.content || '').toLowerCase();
+      const keywords = (p.keywords || '').toLowerCase();
+      let score = 0;
+      if (q && (title.includes(q) || keywords.includes(q))) score += 40;
+      words.forEach(w => {
+        if (title.includes(w)) score += 10;
+        if (keywords.includes(w)) score += 6;
+        if (body.includes(w)) score += 4;
+      });
+      return { p, score };
+    })
+    .filter(x => x.score > 0 || !q) // if user asks generic question, allow top items
+    .sort((a, b) => b.score - a.score)
+    .slice(0, Math.max(limit, 8));
+
+  const topIds = ranked.map(r => r.p.externalId);
+  if (topIds.length === 0) {
+    return { products: [], total: 0, query };
+  }
+
+  // 3) Enrich with live details (price/images/availability) by IDs
+  const resp = await admin.graphql(`
+    query getProductsByIds($ids: [ID!]!) {
+      nodes(ids: $ids) {
+        ... on Product {
+          id
+          title
+          handle
+          description
+          images(first: 1) { edges { node { url altText } } }
+          variants(first: 1) { edges { node { availableForSale price compareAtPrice } } }
+        }
+      }
+    }
+  `, { variables: { ids: topIds } });
+
+  const data = await resp.json();
+  const products = (data.data?.nodes || [])
+    .filter(Boolean)
+    .map(prod => {
+      const v = prod.variants?.edges?.[0]?.node || {};
+      const img = prod.images?.edges?.[0]?.node || null;
+      return {
+        id: prod.id,
+        title: prod.title,
+        handle: prod.handle,
+        description: (prod.description || '').substring(0, 150) + (prod.description?.length > 150 ? '...' : ''),
+        price: v.price || 'Price on request',
+        compareAtPrice: v.compareAtPrice,
+        available: v.availableForSale ?? false,
+        image: img ? { url: img.url, alt: img.altText || prod.title } : null,
+      };
+    });
+
+  return { products, total: products.length, query };
+}
+
 // Search pre-scraped store content (products, articles, collections, pages) in Prisma
 async function searchStoreContentPrisma(shopId, { query, contentTypes = [], limit = 5 }) {
   try {
@@ -659,23 +732,14 @@ Current conversation context: Customer is asking about products or shopping assi
         {
           type: "function",
           function: {
-            name: "search_products", 
-            description: "Search for products in the store. Only in-stock products will be returned. IMPORTANT: When you use this function, respond with ONLY an empty message or a single emoji (like 🛍️). DO NOT include any text descriptions, prices, or product details - the product cards will show everything automatically. Let the visual cards do ALL the talking.",
+            name: "search_store_content",
+            description: "Search the store's own content (products, articles, pages, collections) that has been scraped into the knowledge base.",
             parameters: {
               type: "object",
               properties: {
-                query: {
-                  type: "string",
-                  description: "Search query for products. Use specific terms when customer asks for something specific, or leave empty to get all products when they ask 'what do you sell'. If first search doesn't match what customer wants, try alternative terms like synonyms or related words."
-                },
-                collection: {
-                  type: "string",
-                  description: "Optional collection to search within"
-                },
-                limit: {
-                  type: "number",
-                  description: "Number of products to return (default: 5, max: 8 for better readability)"
-                }
+                query: { type: "string" },
+                contentTypes: { type: "array", items: { type: "string", enum: ["product","article","collection","page"] } },
+                limit: { type: "number" }
               },
               required: []
             }
@@ -684,13 +748,12 @@ Current conversation context: Customer is asking about products or shopping assi
         {
           type: "function",
           function: {
-            name: "search_store_content",
-            description: "Search the store's own content (products, articles, pages, collections) that has been scraped into the knowledge base.",
+            name: "recommend_products",
+            description: "Choose the best-fit products for the customer's intent using store content. Not a keyword search. Return up to 6 recommendations with enriched details for cards.",
             parameters: {
               type: "object",
               properties: {
                 query: { type: "string" },
-                contentTypes: { type: "array", items: { type: "string", enum: ["product","article","collection","page"] } },
                 limit: { type: "number" }
               },
               required: []
@@ -715,11 +778,11 @@ Current conversation context: Customer is asking about products or shopping assi
       console.log("🛠️ Function call:", toolCall.function.name, functionArgs);
 
       switch (toolCall.function.name) {
-        case "search_products":
-          functionResults = await searchProducts(admin, functionArgs);
-          break;
         case "search_store_content":
           functionResults = await searchStoreContentPrisma(shop.id, functionArgs);
+          break;
+        case "recommend_products":
+          functionResults = await recommendProducts(admin, shop.id, functionArgs);
           break;
       }
 

@@ -449,31 +449,7 @@ export const action = async ({ request }) => {
       temperature: shop.botConfig.temperature,
       max_tokens: shop.botConfig.maxTokens,
       tools: [
-        {
-          type: "function",
-          function: {
-            name: "search_products",
-            description: "Search for products in the store with intelligent matching. The search handles misspellings, understands context (e.g., 'diet chocolate' finds chocolate diet products), and ranks results by relevance. Only in-stock products will be returned. Give a brief, contextual response that shows you understand what the customer is looking for, then let the product cards display the details.",
-            parameters: {
-              type: "object",
-              properties: {
-                query: {
-                  type: "string",
-                  description: "Search query for products. Use specific terms when customer asks for something specific, or leave empty to get all products when they ask 'what do you sell'"
-                },
-                collection: {
-                  type: "string",
-                  description: "Optional collection to search within"
-                },
-                limit: {
-                  type: "number",
-                  description: "Number of products to return (default: 5, max: 8 for better readability)"
-                }
-              },
-              required: []
-            }
-          }
-        },
+        // Removed raw search_products tool for public route to avoid "search engine" behavior
         {
           type: "function",
           function: {
@@ -519,9 +495,6 @@ export const action = async ({ request }) => {
       console.log("🛠️ Function call:", toolCall.function.name, functionArgs);
 
       switch (toolCall.function.name) {
-        case "search_products":
-          functionResults = await searchProducts(shopDomain, functionArgs);
-          break;
         case "search_store_content":
           functionResults = await searchStoreContent(shop.id, functionArgs);
           break;
