@@ -666,6 +666,8 @@ STRICT STORE-ONLY POLICY:
 - Answer ONLY using information from this store (products, collections, pages, articles). Do not use outside knowledge.
 - If the user asks about unrelated topics, reply briefly: "I can help with information and products from this store only."
 - Prefer tools to search products and store content before answering.
+- Never use the store-only reply for short or unclear messages (e.g., "what?", "yes", "ok"). Ask a clarifying question instead.
+- Tool selection: If the customer asks to see/buy items, flavors, variants, or mentions a specific product/attribute, CALL "recommend_products". Use "search_store_content" mainly for knowledge/lookups (articles/pages) or browsing collections. If a search returns no items, try "recommend_products" next.
 
 Current conversation context: Customer is asking about products or shopping assistance.`,
       },
@@ -781,6 +783,13 @@ Current conversation context: Customer is asking about products or shopping assi
       switch (toolCall.function.name) {
         case "search_store_content":
           functionResults = await searchStoreContentPrisma(shop.id, functionArgs);
+          // If search found nothing, fall back to recommender to surface products for cards
+          if (!functionResults || (functionResults.items?.length || 0) === 0) {
+            const rec = await recommendProducts(admin, shop.id, { query: functionArgs.query || message, limit: 6 });
+            if (rec && rec.products && rec.products.length > 0) {
+              functionResults = rec;
+            }
+          }
           break;
         case "recommend_products":
           functionResults = await recommendProducts(admin, shop.id, functionArgs);
@@ -837,7 +846,22 @@ YOUR TASK:
         assistantMessage = followUpCompletion.choices[0].message;
         }
       } else {
-        assistantMessage = { role: 'assistant', content: shop.botConfig.errorMessage || "I couldn't find any products matching your request. Can I help with something else?" };
+        // No items found: ask one clear, domain-relevant clarifying question instead of an error
+        const fallbackCompletion = await createChatCompletionWithRetry({
+          model: "gpt-4o-mini",
+          messages: [
+            {
+              role: 'system',
+              content: `${shop.botConfig.systemPrompt}
+
+ROLE: Ask ONE concise clarifying shopping question (≤ 16 words). No product lists in text.`
+            },
+            { role: 'user', content: message }
+          ],
+          temperature: Math.min(shop.botConfig.temperature, 0.6),
+          max_tokens: 40,
+        });
+        assistantMessage = fallbackCompletion.choices[0].message;
       }
     }
 
