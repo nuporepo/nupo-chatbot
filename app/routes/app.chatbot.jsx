@@ -550,6 +550,7 @@ Current conversation context: Customer is asking about products or shopping assi
 
     // Check if OpenAI API key is configured
     const apiKey = shop.botConfig.openaiApiKey || process.env.OPENAI_API_KEY;
+    console.log("🔐 OpenAI key source:", shop.botConfig.openaiApiKey ? "shop-configured" : process.env.OPENAI_API_KEY ? "env" : "missing");
     if (!apiKey) {
       return json({ error: "OpenAI API key not configured. Please add your API key in the bot configuration." });
     }
@@ -606,6 +607,7 @@ Current conversation context: Customer is asking about products or shopping assi
       ]
     });
 
+    console.log("🆔 OpenAI completion id:", completion.id);
     let assistantMessage = completion.choices[0].message;
     let functionResults = null;
 
@@ -640,7 +642,7 @@ Current conversation context: Customer is asking about products or shopping assi
         temperature: shop.botConfig.temperature,
         max_tokens: shop.botConfig.maxTokens,
       });
-
+      console.log("🆔 OpenAI follow-up id:", followUpCompletion.id);
       assistantMessage = followUpCompletion.choices[0].message;
     }
 

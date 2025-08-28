@@ -271,6 +271,7 @@ export const action = async ({ request }) => {
 
     // Check if OpenAI API key is configured
     const apiKey = shop.botConfig.openaiApiKey || process.env.OPENAI_API_KEY;
+    console.log("🔐 OpenAI key source:", shop.botConfig.openaiApiKey ? "shop-configured" : process.env.OPENAI_API_KEY ? "env" : "missing");
     if (!apiKey) {
       return json({ 
         error: shop.botConfig.errorMessage || "Service temporarily unavailable" 
@@ -399,6 +400,7 @@ Current conversation context: Customer is asking about products or shopping assi
       tool_choice: "auto",
     });
 
+    console.log("🆔 OpenAI completion id:", completion.id);
     let assistantMessage = completion.choices[0].message;
     let functionResults = null;
 
@@ -437,7 +439,7 @@ Current conversation context: Customer is asking about products or shopping assi
           temperature: shop.botConfig.temperature,
           max_tokens: shop.botConfig.maxTokens,
         });
-
+        console.log("🆔 OpenAI follow-up id:", followUpCompletion.id);
         assistantMessage = followUpCompletion.choices[0].message;
         console.log("✅ Follow-up AI Response:", assistantMessage.content);
       } catch (error) {
