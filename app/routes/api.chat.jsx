@@ -235,6 +235,54 @@ async function searchProducts(shopDomain, { query, collection, limit = 5 }) {
   }
 }
 
+// Search pre-scraped store content (products, articles, collections, pages)
+async function searchStoreContent(shopId, { query, contentTypes = [], limit = 5 }) {
+  try {
+    const where = {
+      shopId,
+      isActive: true,
+    };
+    if (contentTypes && contentTypes.length > 0) {
+      where.contentType = { in: contentTypes };
+    }
+    const text = (query || '').trim();
+    if (text) {
+      where.OR = [
+        { title: { contains: text, mode: 'insensitive' } },
+        { searchableContent: { contains: text.toLowerCase() } },
+        { keywords: { contains: text, mode: 'insensitive' } },
+        { tags: { contains: text, mode: 'insensitive' } },
+      ];
+    }
+
+    const items = await prisma.shopContent.findMany({
+      where,
+      orderBy: { updatedAt: 'desc' },
+      take: limit,
+      select: {
+        id: true,
+        contentType: true,
+        title: true,
+        excerpt: true,
+        url: true,
+        publishedAt: true,
+      }
+    });
+
+    const total = await prisma.shopContent.count({ where });
+
+    return {
+      items,
+      query: text,
+      total,
+      contentTypes: contentTypes.length ? contentTypes : undefined,
+    };
+  } catch (error) {
+    console.error('Error searching store content:', error);
+    return { items: [], query, total: 0, error: 'Failed to search content' };
+  }
+}
+
 export const action = async ({ request }) => {
   console.log("🚀 Public Chat API called!");
   try {
@@ -340,6 +388,11 @@ IMPORTANT RESPONSE GUIDELINES:
 - Be honest if you can't find exactly what they want, but offer smart alternatives
 - Think like a knowledgeable shop assistant who really understands the products and customer needs
 
+ STRICT STORE-ONLY POLICY:
+ - You MUST answer ONLY using information from this specific store (its products, collections, pages, and articles). Do not invent facts or use outside knowledge.
+ - If the user asks anything unrelated to this store or you lack content, reply briefly: "I can help with information and products from this store only."
+ - Prefer using the provided tools to search products and store content before answering.
+
 Current conversation context: Customer is asking about products or shopping assistance.`,
       },
       ...chatSession.messages.map(msg => ({
@@ -395,6 +448,32 @@ Current conversation context: Customer is asking about products or shopping assi
               required: []
             }
           }
+        },
+        {
+          type: "function",
+          function: {
+            name: "search_store_content",
+            description: "Search the store's own content (products, articles, pages, collections) that has been scraped into the knowledge base. Use this for policy, FAQ, articles, or when validating store-specific info."
+            ,parameters: {
+              type: "object",
+              properties: {
+                query: {
+                  type: "string",
+                  description: "Text to search for within store content (title, keywords, searchableContent)."
+                },
+                contentTypes: {
+                  type: "array",
+                  items: { type: "string", enum: ["product", "article", "collection", "page"] },
+                  description: "Optional filter for content types"
+                },
+                limit: {
+                  type: "number",
+                  description: "Max number of items to return (default 5)"
+                }
+              },
+              required: []
+            }
+          }
         }
       ],
       tool_choice: "auto",
@@ -417,6 +496,9 @@ Current conversation context: Customer is asking about products or shopping assi
       switch (toolCall.function.name) {
         case "search_products":
           functionResults = await searchProducts(shopDomain, functionArgs);
+          break;
+        case "search_store_content":
+          functionResults = await searchStoreContent(shop.id, functionArgs);
           break;
       }
 

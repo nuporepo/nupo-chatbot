@@ -315,6 +315,54 @@ async function searchProducts(admin, { query, collection, limit = 5 }) {
   }
 }
 
+// Search pre-scraped store content (products, articles, collections, pages) in Prisma
+async function searchStoreContentPrisma(shopId, { query, contentTypes = [], limit = 5 }) {
+  try {
+    const where = {
+      shopId,
+      isActive: true,
+    };
+    if (contentTypes && contentTypes.length > 0) {
+      where.contentType = { in: contentTypes };
+    }
+    const text = (query || '').trim();
+    if (text) {
+      where.OR = [
+        { title: { contains: text, mode: 'insensitive' } },
+        { searchableContent: { contains: text.toLowerCase() } },
+        { keywords: { contains: text, mode: 'insensitive' } },
+        { tags: { contains: text, mode: 'insensitive' } },
+      ];
+    }
+
+    const items = await prisma.shopContent.findMany({
+      where,
+      orderBy: { updatedAt: 'desc' },
+      take: limit,
+      select: {
+        id: true,
+        contentType: true,
+        title: true,
+        excerpt: true,
+        url: true,
+        publishedAt: true,
+      }
+    });
+
+    const total = await prisma.shopContent.count({ where });
+
+    return {
+      items,
+      query: text,
+      total,
+      contentTypes: contentTypes.length ? contentTypes : undefined,
+    };
+  } catch (error) {
+    console.error('Error searching store content:', error);
+    return { items: [], query, total: 0, error: 'Failed to search content' };
+  }
+}
+
 // Analytics functions
 async function trackConversationAnalytics(sessionId, shopId, messageCount, productsViewed, productsRecommended, topics) {
   try {
@@ -536,6 +584,11 @@ IMPORTANT RESPONSE GUIDELINES:
 - If results don't match what they asked for, try a different search term automatically
 - Act like a concise, helpful waiter - let the visual product cards do ALL the talking
 
+STRICT STORE-ONLY POLICY:
+- Answer ONLY using information from this store (products, collections, pages, articles). Do not use outside knowledge.
+- If the user asks about unrelated topics, reply briefly: "I can help with information and products from this store only."
+- Prefer tools to search products and store content before answering.
+
 Current conversation context: Customer is asking about products or shopping assistance.`,
       },
       ...chatSession.messages.map(msg => ({
@@ -603,6 +656,22 @@ Current conversation context: Customer is asking about products or shopping assi
               required: []
             }
           }
+        },
+        {
+          type: "function",
+          function: {
+            name: "search_store_content",
+            description: "Search the store's own content (products, articles, pages, collections) that has been scraped into the knowledge base.",
+            parameters: {
+              type: "object",
+              properties: {
+                query: { type: "string" },
+                contentTypes: { type: "array", items: { type: "string", enum: ["product","article","collection","page"] } },
+                limit: { type: "number" }
+              },
+              required: []
+            }
+          }
         }
       ]
     });
@@ -624,6 +693,9 @@ Current conversation context: Customer is asking about products or shopping assi
       switch (toolCall.function.name) {
         case "search_products":
           functionResults = await searchProducts(admin, functionArgs);
+          break;
+        case "search_store_content":
+          functionResults = await searchStoreContentPrisma(shop.id, functionArgs);
           break;
       }
 
