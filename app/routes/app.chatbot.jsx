@@ -787,23 +787,8 @@ Current conversation context: Customer is asking about products or shopping assi
           break;
       }
 
-      // Generate a follow-up response with the function results
-      const followUpCompletion = await createChatCompletionWithRetry({
-        model: "gpt-4o-mini",
-        messages: [
-          ...conversationHistory,
-          assistantMessage,
-          {
-            role: 'tool',
-            tool_call_id: toolCall.id,
-            content: JSON.stringify(functionResults),
-          },
-        ],
-        temperature: shop.botConfig.temperature,
-        max_tokens: shop.botConfig.maxTokens,
-      });
-      console.log("🆔 OpenAI follow-up id:", followUpCompletion.id);
-      assistantMessage = followUpCompletion.choices[0].message;
+      // Skip follow-up; product cards will show details
+      assistantMessage = { role: 'assistant', content: '' };
     }
 
     // Save assistant message

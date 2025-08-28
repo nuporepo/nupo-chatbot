@@ -282,36 +282,9 @@ export const action = async ({ request }) => {
           break;
       }
 
-      // Generate a follow-up response with the function results
-      console.log("🔄 Making follow-up OpenAI call with function results...");
-      console.log("📊 Function results:", JSON.stringify(functionResults, null, 2));
-      
-      try {
-        const followUpCompletion = await createChatCompletionWithRetry({
-          model: "gpt-4o-mini",
-          messages: [
-            ...conversationHistory,
-            assistantMessage,
-            {
-              role: 'tool',
-              tool_call_id: toolCall.id,
-              content: JSON.stringify(functionResults),
-            },
-          ],
-          temperature: shop.botConfig.temperature,
-          max_tokens: shop.botConfig.maxTokens,
-        });
-        console.log("🆔 OpenAI follow-up id:", followUpCompletion.id);
-        assistantMessage = followUpCompletion.choices[0].message;
-        console.log("✅ Follow-up AI Response:", assistantMessage.content);
-      } catch (error) {
-        console.error("❌ Follow-up OpenAI call failed:", error);
-        // Fallback response
-        assistantMessage = {
-          role: 'assistant',
-          content: 'I found some great options for you!'
-        };
-      }
+      // Skip a second OpenAI call — product cards will display details
+      console.log("🛍️ Skipping follow-up call; letting product cards render.");
+      assistantMessage = { role: 'assistant', content: '' };
     }
 
     // Save assistant message
