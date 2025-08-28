@@ -557,6 +557,12 @@ RETURNING CUSTOMER DETECTED:
 IMPORTANT: Welcome them back personally and reference their purchase history appropriately. Ask about their experience with previous products.`;
     }
 
+    // Trim message history to reduce token usage
+    const recentMessages = (chatSession.messages || []).slice(-8).map(msg => ({
+      role: msg.role,
+      content: msg.content,
+    }));
+
     const conversationHistory = [
       {
         role: 'system',
@@ -568,10 +574,6 @@ Store Information:
 - Currency: ${storeData.shop.currencyCode}
 - Products available: ${storeData.productCount}
 - Collections: ${storeData.collections.map(c => c.title).join(', ')}
-
-Knowledge Base:
-${shop.knowledgeBase.map(kb => `${kb.title}: ${kb.content}`).join('\n')}
-
 ${customerMemoryContext}
 
 IMPORTANT RESPONSE GUIDELINES:
@@ -593,10 +595,7 @@ STRICT STORE-ONLY POLICY:
 
 Current conversation context: Customer is asking about products or shopping assistance.`,
       },
-      ...chatSession.messages.map(msg => ({
-        role: msg.role,
-        content: msg.content,
-      })),
+      ...recentMessages,
       {
         role: 'user',
         content: message,
@@ -627,8 +626,9 @@ Current conversation context: Customer is asking about products or shopping assi
             const retryAfterMs = Number(error?.headers?.["retry-after-ms"]) ||
               (Number(error?.headers?.["retry-after"]) * 1000) ||
               (1000 * (attempt + 1));
-            console.warn(`⚠️ OpenAI rate limited. Retrying in ${retryAfterMs}ms (attempt ${attempt + 1}/${maxRetries})`);
-            await new Promise(r => setTimeout(r, Math.min(retryAfterMs || 1000, 5000)));
+            const waitMs = Math.min(retryAfterMs || 1000, 5000);
+            console.warn(`⚠️ OpenAI rate limited. Retrying in ${waitMs}ms (attempt ${attempt + 1}/${maxRetries})`);
+            await new Promise(r => setTimeout(r, waitMs));
             attempt += 1;
             continue;
           }

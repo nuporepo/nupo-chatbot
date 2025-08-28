@@ -362,7 +362,12 @@ export const action = async ({ request }) => {
     // Get store context
     const storeData = await getStoreContext(shopDomain);
 
-    // Create conversation history for OpenAI
+    // Create conversation history for OpenAI (trim history to reduce tokens)
+    const recentMessages = (chatSession.messages || []).slice(-8).map(msg => ({
+      role: msg.role,
+      content: msg.content,
+    }));
+
     const conversationHistory = [
       {
         role: 'system',
@@ -374,9 +379,7 @@ export const action = async ({ request }) => {
  - Currency: ${storeData.shop.currencyCode}
  - Products available: ${storeData.productCount}
  - Collections: ${storeData.collections.map(c => c.title).join(', ')}
- 
- Knowledge Base:
- ${shop.knowledgeBase.map(kb => `${kb.title}: ${kb.content}`).join('\n')}
+ - When you need store facts or policy details, use tools to fetch them (do not guess)
  
  IMPORTANT RESPONSE GUIDELINES:
  - You are an intelligent shopping assistant who understands customer intent and context
@@ -397,10 +400,7 @@ export const action = async ({ request }) => {
  
  Current conversation context: Customer is asking about products or shopping assistance.`,
       },
-      ...chatSession.messages.map(msg => ({
-        role: msg.role,
-        content: msg.content,
-      })),
+      ...recentMessages,
       {
         role: 'user',
         content: message,
@@ -419,8 +419,31 @@ export const action = async ({ request }) => {
     });
     console.log("=====================================");
     
+    // Helper: retry OpenAI calls on 429s with short capped wait
+    async function createChatCompletionWithRetry(params, maxRetries = 2) {
+      let attempt = 0;
+      while (true) {
+        try {
+          return await openai.chat.completions.create(params);
+        } catch (error) {
+          const status = error?.status;
+          if (status === 429 && attempt < maxRetries) {
+            const retryAfterMs = Number(error?.headers?.["retry-after-ms"]) ||
+              (Number(error?.headers?.["retry-after"]) * 1000) ||
+              (1000 * (attempt + 1));
+            const waitMs = Math.min(retryAfterMs || 1000, 5000);
+            console.warn(`⚠️ OpenAI rate limited. Retrying in ${waitMs}ms (attempt ${attempt + 1}/${maxRetries})`);
+            await new Promise(r => setTimeout(r, waitMs));
+            attempt += 1;
+            continue;
+          }
+          throw error;
+        }
+      }
+    }
+
     // Call OpenAI with function calling support
-    const completion = await openai.chat.completions.create({
+    const completion = await createChatCompletionWithRetry({
       model: "gpt-4o-mini",
       messages: conversationHistory,
       temperature: shop.botConfig.temperature,
@@ -509,7 +532,7 @@ export const action = async ({ request }) => {
       console.log("📊 Function results:", JSON.stringify(functionResults, null, 2));
       
       try {
-        const followUpCompletion = await openai.chat.completions.create({
+        const followUpCompletion = await createChatCompletionWithRetry({
           model: "gpt-4o-mini",
           messages: [
             ...conversationHistory,
