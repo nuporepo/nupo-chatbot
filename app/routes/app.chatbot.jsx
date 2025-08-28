@@ -583,6 +583,8 @@ IMPORTANT RESPONSE GUIDELINES:
 - Only use text responses for questions about store policies, shipping, or general help
 - If results don't match what they asked for, try a different search term automatically
 - Act like a concise, helpful waiter - let the visual product cards do ALL the talking
+- Ask a brief clarifying question when the request is ambiguous (don't list everything)
+- Offer options (e.g., sizes, bundles) only after checking customer interest
 
 STRICT STORE-ONLY POLICY:
 - Answer ONLY using information from this store (products, collections, pages, articles). Do not use outside knowledge.
@@ -613,6 +615,28 @@ Current conversation context: Customer is asking about products or shopping assi
       apiKey: apiKey,
     });
 
+    // Helper: retry OpenAI calls on 429s
+    async function createChatCompletionWithRetry(params, maxRetries = 2) {
+      let attempt = 0;
+      while (true) {
+        try {
+          return await openai.chat.completions.create(params);
+        } catch (error) {
+          const status = error?.status;
+          if (status === 429 && attempt < maxRetries) {
+            const retryAfterMs = Number(error?.headers?.["retry-after-ms"]) ||
+              (Number(error?.headers?.["retry-after"]) * 1000) ||
+              (1000 * (attempt + 1));
+            console.warn(`⚠️ OpenAI rate limited. Retrying in ${retryAfterMs}ms (attempt ${attempt + 1}/${maxRetries})`);
+            await new Promise(r => setTimeout(r, Math.min(retryAfterMs || 1000, 5000)));
+            attempt += 1;
+            continue;
+          }
+          throw error;
+        }
+      }
+    }
+
     console.log("🤖 Calling OpenAI...");
     
     // LOG THE COMPLETE PROMPT FOR DEBUGGING
@@ -626,7 +650,7 @@ Current conversation context: Customer is asking about products or shopping assi
     console.log("=====================================");
     
     // Call OpenAI
-    const completion = await openai.chat.completions.create({
+    const completion = await createChatCompletionWithRetry({
       model: "gpt-4o-mini",
       messages: conversationHistory,
       temperature: shop.botConfig.temperature,
@@ -700,7 +724,7 @@ Current conversation context: Customer is asking about products or shopping assi
       }
 
       // Generate a follow-up response with the function results
-      const followUpCompletion = await openai.chat.completions.create({
+      const followUpCompletion = await createChatCompletionWithRetry({
         model: "gpt-4o-mini",
         messages: [
           ...conversationHistory,
@@ -776,16 +800,22 @@ Current conversation context: Customer is asking about products or shopping assi
   } catch (error) {
     console.error("❌ App Chatbot error:", error);
     
-    // Get error message from config
-    const { session } = await authenticate.admin(request);
-    const shop = await prisma.shop.findUnique({
-      where: { shopDomain: session.shop },
-      include: { botConfig: true },
-    });
+    // Get error message from config without reusing the consumed request body
+    let errorMessage = "I apologize, but I'm having trouble right now. Please try again in a moment.";
+    try {
+      const { session } = await authenticate.admin(request);
+      const shopRecord = await prisma.shop.findUnique({
+        where: { shopDomain: session.shop },
+        include: { botConfig: true },
+      });
+      if (shopRecord?.botConfig?.errorMessage) {
+        errorMessage = shopRecord.botConfig.errorMessage;
+      }
+    } catch (_) {}
     
     return json({ 
-      message: shop?.botConfig?.errorMessage || "I apologize, but I'm having trouble right now. Please try again in a moment.",
-      sessionId: request.formData().get("sessionId"),
+      message: errorMessage,
+      sessionId: undefined,
     });
   }
 };

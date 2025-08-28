@@ -334,6 +334,69 @@ async function scrapeCollections(admin, shopId) {
   return collections;
 }
 
+// Scrape pages (Shopify Online Store pages)
+async function scrapePages(admin, shopId) {
+  console.log("📄 Scraping pages...");
+  const pages = [];
+  let hasNextPage = true;
+  let cursor = null;
+  while (hasNextPage) {
+    const query = `
+      query getPages($first: Int!, $after: String) {
+        pages(first: $first, after: $after) {
+          edges {
+            cursor
+            node {
+              id
+              title
+              handle
+              body
+              createdAt
+              updatedAt
+              publishedAt
+            }
+          }
+          pageInfo { hasNextPage endCursor }
+        }
+      }
+    `;
+    const response = await admin.graphql(query, {
+      variables: { first: 50, after: cursor }
+    });
+    const data = await response.json();
+    if (data.data?.pages?.edges) {
+      for (const edge of data.data.pages.edges) {
+        const page = edge.node;
+        const searchableContent = processContentForSearch([
+          page.title,
+          page.body
+        ].filter(Boolean).join(' '));
+        const keywords = extractKeywords(page.body, page.title);
+        pages.push({
+          shopId,
+          contentType: 'page',
+          externalId: page.id,
+          title: page.title,
+          content: page.body || '',
+          excerpt: page.body?.substring(0, 250) + '...' || '',
+          url: `/pages/${page.handle}`,
+          tags: '',
+          publishedAt: page.publishedAt ? new Date(page.publishedAt) : new Date(page.createdAt),
+          searchableContent,
+          keywords,
+          lastScraped: new Date(),
+          isActive: true
+        });
+      }
+      hasNextPage = data.data.pages.pageInfo.hasNextPage;
+      cursor = data.data.pages.pageInfo.endCursor;
+    } else {
+      hasNextPage = false;
+    }
+  }
+  console.log(`✅ Found ${pages.length} pages`);
+  return pages;
+}
 // Main scraping function
 async function performFullScrape(admin, shopId, shopDomain) {
   console.log(`🚀 Starting full shop scrape for ${shopDomain}...`);
@@ -390,6 +453,11 @@ async function performFullScrape(admin, shopId, shopDomain) {
     const collections = await scrapeCollections(admin, shopId);
     allContent = allContent.concat(collections);
     totalItems += collections.length;
+
+    // Scrape pages
+    const pages = await scrapePages(admin, shopId);
+    allContent = allContent.concat(pages);
+    totalItems += pages.length;
     
     // Clear existing content and insert new
     await prisma.shopContent.deleteMany({
